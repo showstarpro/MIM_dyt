@@ -83,15 +83,15 @@ class MaskedAutoencoderViT(nn.Module):
         for blk in self.blocks:
             count+=1
             if count==self.intermediate:
-                qk, vv = blk(x, return_relation=True)
-                return qk, vv
+                qk, vv, norm_x = blk(x, return_relation=True)
+                return qk, vv, norm_x
             else:
                 x = blk(x)
         return x
 
     def forward(self, imgs):
-        qk, vv = self.forward_encoder(imgs)
-        return qk, vv
+        qk, vv, norm_x = self.forward_encoder(imgs)
+        return qk, vv, norm_x
 
 
 def mae_vit_small(**kwargs):

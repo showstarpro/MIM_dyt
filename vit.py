@@ -62,7 +62,7 @@ class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim) # 正则化层
         self.attn = Attention(
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
@@ -73,12 +73,53 @@ class Block(nn.Module):
 
     def forward(self, x, return_relation=False):
         if return_relation:
+            norm_x = self.norm1(x)
             qk, vv =self.attn(self.norm1(x), return_relation=True)
-            return qk, vv
+            return qk, vv, norm_x
         x = x + self.drop_path(self.attn(self.norm1(x)))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
+
+# 定义DyT层
+class DyT(nn.Module):
+    def __init__(self, num_features, alpha_init_value=0.5):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(1) * alpha_init_value)
+        self.weight = nn.Parameter(torch.ones(num_features))
+        self.bias = nn.Parameter(torch.zeros(num_features))
+
+    def forward(self, x):
+        x = torch.tanh(self.alpha * x)
+        return x * self.weight + self.bias
+
+
+class Dyt_Block(nn.Module):
+    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+        super().__init__()
+        # 原始LayerNorm替换为DyT层
+        self.dyt1 = DyT(num_features=dim)
+        self.dyt2 = DyT(num_features=dim)
+
+        self.attn = Attention(
+            dim, num_heads=num_heads, qkv_bias=qkv_bias,
+            qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
+
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim,
+                       act_layer=act_layer, drop=drop)
+
+    def forward(self, x, return_relation=False):
+        if return_relation:
+            # 使用DyT代替原始归一化
+            dyt_x = self.dyt1(x)
+            qk, vv = self.attn(self.dyt1(x), return_relation=True)
+            return qk, vv, dyt_x
+        x = x + self.drop_path(self.attn(self.dyt1(x)))
+        x = x + self.drop_path(self.mlp(self.dyt2(x)))
+        return x
 
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
