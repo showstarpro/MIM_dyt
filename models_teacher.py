@@ -23,11 +23,13 @@ class MaskedAutoencoderViT(nn.Module):
     """ Masked Autoencoder with VisionTransformer backbone
     """
     def __init__(self, img_size=224, patch_size=16, in_chans=3,
-                 embed_dim=1024, depth=24, num_heads=16,intermediate=18,
+                 embed_dim=1024, depth=24, num_heads=16, intermediate=None,
                  mlp_ratio=4., norm_layer=nn.LayerNorm):
         super().__init__()
 
         # --------------------------------------------------------------------------
+        if intermediate is None:
+            intermediate = [18]
         self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
         num_patches = self.patch_embed.num_patches
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
@@ -80,18 +82,25 @@ class MaskedAutoencoderViT(nn.Module):
 
         # apply Transformer blocks
         count=0
+        qk = []
+        vv = []
+        norm_x = []
+        cls = []
         for blk in self.blocks:
             count+=1
-            if count==self.intermediate:
-                qk, vv, norm_x = blk(x, return_relation=True)
-                return qk, vv, norm_x
+            if count in self.intermediate:
+                x, qk_temp, vv_temp, norm_temp = blk(x, return_relation=True)
+                qk.append(qk_temp)
+                vv.append(vv_temp)
+                norm_x.append(norm_temp)
+                cls.append(x[:,0,:])
             else:
-                x = blk(x)
-        return x
+                x, _, _, _ = blk(x, return_relation=True)
+        return x, qk, vv, norm_x, cls
 
     def forward(self, imgs):
-        qk, vv, norm_x = self.forward_encoder(imgs)
-        return qk, vv, norm_x
+        x, qk, vv, norm_x, cls = self.forward_encoder(imgs)
+        return x, qk, vv, norm_x, cls  # 返回最后的输出x，所有需要做loss的层的qk，vv, norm_x和cls列表
 
 
 def mae_vit_small(**kwargs):

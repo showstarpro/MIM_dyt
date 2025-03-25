@@ -114,8 +114,12 @@ def get_args_parser():
                         help='File path to pre-trained teacher model weights')
     parser.add_argument("--teacher_model", default = "mae_vit_large",type=str,
                         help='Architecture name of teacher model')
-    parser.add_argument('--intermediate', default=18, type=int,
-                        help='Layer index for intermediate feature distillation')
+
+    # 做损失的层数
+    parser.add_argument('--intermediate', default=[1,3,5,12,18],    # teacher层数
+                        help='Layer index for teacher feature distillation')
+    parser.add_argument('--layer', default=[1,3,5, 8, 12],           # student层数
+                        help='Layer index for student feature distillation')
 
     return parser
 
@@ -260,10 +264,12 @@ def main(args):
     # Model initialization --------------------------------------------------------
     # Student model instantiation
     model = models_tinymim.__dict__[args.model]()  # Dynamic model loading
+    model.layer = args.layer
 
     # Teacher model setup
     teacher = models_teacher.__dict__[args.teacher_model]()  # Load teacher architecture
     teacher.load_state_dict(torch.load(args.teacher_path, map_location="cpu", weights_only=True)["model"])
+    teacher.intermediate = args.intermediate
     teacher.eval()  # Freeze teacher parameters
 
     # Device placement

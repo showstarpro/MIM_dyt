@@ -47,14 +47,16 @@ class Attention(nn.Module):
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
-        if return_relation:
-            return attn, ((v @ v.transpose(-2, -1)) * self.scale).softmax(dim=-1)
+        qk = attn
+        vv = ((v @ v.transpose(-2, -1)) * self.scale).softmax(dim=-1)
+        # if return_relation:
+        #     return attn, ((v @ v.transpose(-2, -1)) * self.scale).softmax(dim=-1)
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x
+        return x, qk, vv
 
 
 class Block(nn.Module):
@@ -74,10 +76,12 @@ class Block(nn.Module):
     def forward(self, x, return_relation=False):
         if return_relation:
             norm_x = self.norm1(x)
-            qk, vv =self.attn(self.norm1(x), return_relation=True)
-            return qk, vv, norm_x
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+            x, qk, vv =self.attn(self.norm1(x), return_relation=True)
+            x = x + self.drop_path(x)
+            x = x + self.drop_path(self.mlp(self.norm2(x)))
+            return x, qk, vv, norm_x
+        # x = x + self.drop_path(self.attn(self.norm1(x)))
+        # x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
 
@@ -115,10 +119,12 @@ class Dyt_Block(nn.Module):
         if return_relation:
             # 使用DyT代替原始归一化
             dyt_x = self.dyt1(x)
-            qk, vv = self.attn(self.dyt1(x), return_relation=True)
-            return qk, vv, dyt_x
-        x = x + self.drop_path(self.attn(self.dyt1(x)))
-        x = x + self.drop_path(self.mlp(self.dyt2(x)))
+            x, qk, vv = self.attn(self.dyt1(x), return_relation=True)
+            x = x + self.drop_path(x)
+            x = x + self.drop_path(self.mlp(self.dyt2(x)))
+            return x, qk, vv, dyt_x
+        # x = x + self.drop_path(self.attn(self.dyt1(x)))
+        # x = x + self.drop_path(self.mlp(self.dyt2(x)))
         return x
 
 class PatchEmbed(nn.Module):
