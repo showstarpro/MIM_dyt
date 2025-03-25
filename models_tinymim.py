@@ -134,14 +134,10 @@ class TinyMIMViT(nn.Module):
         teacher_proj = self.teacher_proj(teacher_out[3][-1])
         dyt_loss = self.forward_kd_softmax_loss(dyt_proj, teacher_proj)
 
-        x = self.x_proj(x)
-        t = self.t_proj(teacher_out[0])
-        x_loss = self.forward_kd_softmax_loss(x, t)# 加了一个dyt loss，teacher的norm和student的dyt做对比
-
         cls_x = self.clsx_proj(cls[-1])
         cls_t = self.clst_proj(teacher_out[4][-1])
         cls_loss = self.forward_kd_softmax_loss(cls_x, cls_t)
-        return x_loss, qk_loss, vv_loss, dyt_loss,cls_loss   # out_feature，
+        return qk_loss, vv_loss, dyt_loss,cls_loss   # out_feature，
 
 
 def tinymim_vit_tiny_patch16(**kwargs):
