@@ -17,23 +17,42 @@ import time
 from pathlib import Path
 
 import torch
-import torch.backends.cudnn as cudnn
+#修改1
+#import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
+from dyt import convert_ln_to_dyt
 
 import timm
 
-assert timm.__version__ == "0.3.2"  # version check
+
+#assert timm.__version__ == "0.3.2"  # version check
 import timm.optim.optim_factory as optim_factory
 
 import util.misc as misc
-from util.misc import NativeScalerWithGradNormCount as NativeScaler
+
+#from util.misc import NativeScalerWithGradNormCount as NativeScaler
+from util.misc import NativeScaler
 
 import models_tinymim
 
 from engine_pretrain import train_one_epoch
 import models_teacher
+
+def str2bool(v):
+    """
+    Converts string to bool type; enables command line 
+    arguments in the format of '--arg1 true --arg2 false'
+    """
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE pre-training', add_help=False)
@@ -62,13 +81,15 @@ def get_args_parser():
                         help='epochs to warmup LR')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
-                        help='dataset path')
+    #parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
+    #                   help='dataset path')
+    parser.add_argument('--data_path', default='./data/tiny-imagenet-200/', type=str)
     parser.add_argument('--output_dir', default='./output_dir',
                         help='path where to save, empty for no saving')
     parser.add_argument('--log_dir', default='./output_dir',
                         help='path where to tensorboard log')
-    parser.add_argument('--device', default='cuda',
+    #修改4
+    parser.add_argument('--device', default='cpu',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--resume', default='',
@@ -76,7 +97,8 @@ def get_args_parser():
 
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
-    parser.add_argument('--num_workers', default=10, type=int)
+    #修改5:10->4
+    parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
@@ -95,6 +117,16 @@ def get_args_parser():
     # Teacher Params
     parser.add_argument('--intermediate', default=18, type=int,
                         help='Distill intermediate layer of teacher')
+    
+    # 如果要使用DyT,则args.dynamic_tanh = true
+    parser.add_argument('--dynamic_tanh', type=str2bool, default=False)
+    # 如要进行预训练，则定义pretrain = true
+    parser.add_argument('--pretrain', type=str2bool, default=True)
+    # 定义pretrain时需要蒸馏的层数distill_layer
+    parser.add_argument('--distill_layer', type=str, default='9')
+    # 定义pretrain时需要蒸馏的dyt是第一个 or 第二个
+    parser.add_argument('--distill_dyt', type=str, default='before')
+
     return parser
 
 class TwoCropsTransform:
@@ -125,7 +157,8 @@ def main(args):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    cudnn.benchmark = True
+    #修改6
+    #cudnn.benchmark = True
 
     # simple augmentation
     common_transform = transforms.Compose(
@@ -168,8 +201,15 @@ def main(args):
         drop_last=True,
     )
     # define the model
-    model = models_tinymim.__dict__[args.model]()
-    teacher = models_teacher.__dict__[args.teacher_model]()
+    model = models_tinymim.__dict__[args.model](pretrain=args.pretrain, distill_layer=args.distill_layer, 
+                                                distill_dyt = args.distill_dyt)
+
+    # 添加：norm转化为DyT
+    if args.dynamic_tanh:
+        model = convert_ln_to_dyt(model)
+
+    teacher = models_teacher.__dict__[args.teacher_model](pretrain=args.pretrain, distill_layer=args.distill_layer, 
+                                                distill_dyt = args.distill_dyt)
     teacher.load_state_dict(torch.load(args.teacher_path, map_location="cpu")["model"])
     teacher.eval()
     model.to(device)
@@ -188,17 +228,37 @@ def main(args):
 
     print("accumulate grad iterations: %d" % args.accum_iter)
     print("effective batch size: %d" % eff_batch_size)
-
+    #9
+    """
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
-    
+    """
+    # 分布式训练设置（保持兼容CPU分布式）
+    if args.distributed:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=None,  # 修改9：CPU分布式不需要device_ids
+            find_unused_parameters=True
+        )
+        model_without_ddp = model.module
+    else:
+        model_without_ddp = model
+
     # following timm: set wd as 0 for bias and norm layers
+    param_groups = optim_factory.param_groups_weight_decay(model_without_ddp, args.weight_decay)
+    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
+    """
     param_groups = optim_factory.add_weight_decay(model_without_ddp, args.weight_decay)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
+    """
+
     print(optimizer)
     loss_scaler = NativeScaler()
+    # 为测试DyT，先不加auto resume，否则自动恢复norm的预训练参数
+    """
     #auto resume
+
     if os.path.exists(args.output_dir):
         ckpt = os.listdir(args.output_dir)
         if len(ckpt)>0:
@@ -207,6 +267,8 @@ def main(args):
                     args.resume = "./output_dir/"+"checkpoint-{}.pth".format(str(i))
                     print(args.resume)
     misc.load_model(args=args, model_without_ddp=model_without_ddp, optimizer=optimizer, loss_scaler=loss_scaler)
+    """
+
 
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
@@ -216,7 +278,8 @@ def main(args):
         train_stats = train_one_epoch(
             model, teacher, data_loader_train,
             optimizer, device, epoch, loss_scaler,
-            log_writer=log_writer,
+            #11 log_writer -> None
+            log_writer=None,
             args=args
         )
         if args.output_dir and (epoch % 20 == 0 or epoch + 1 == args.epochs):

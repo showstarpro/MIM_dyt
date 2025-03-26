@@ -46,12 +46,23 @@ def train_one_epoch(model: torch.nn.Module, teacher: torch.nn.Module,
         B, C, H, W = samples[0].shape
         N = B
         L = H // 16 * W // 16
-        noise = torch.rand(N, L, device=samples[0].device)  # noise in [0, 1]
+        # 修改1：移除device指定，默认使用CPU
+        #noise = torch.rand(N, L, device=samples[0].device)  # noise in [0, 1]
+        noise = torch.rand(N, L)  
+
+        # loss是平均or sum
+        # 修改3：移除混合精度训练（autocast）
+        """
         with torch.cuda.amp.autocast():
             with torch.no_grad():
                 teacher_out = teacher(samples[0].to(device, non_blocking=True))
             qk_loss, vv_loss = model(samples[1].to(device, non_blocking=True), teacher_out)
-        loss = qk_loss+vv_loss
+        """
+
+        with torch.no_grad():
+            teacher_out = teacher(samples[0])  # 修改2：移除.to(device)
+        loss = model(samples[1], teacher_out)
+
         loss_value = loss.item()
 
         if not math.isfinite(loss_value):
@@ -59,15 +70,25 @@ def train_one_epoch(model: torch.nn.Module, teacher: torch.nn.Module,
             sys.exit(1)
 
         loss /= accum_iter
+        #替换
+        """
         loss_scaler(loss, optimizer, parameters=model.parameters(),
                     update_grad=(data_iter_step + 1) % accum_iter == 0)
+        
         if (data_iter_step + 1) % accum_iter == 0:
             optimizer.zero_grad()
+        """
+        if (data_iter_step + 1) % accum_iter == 0:
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+        else:
+            loss.backward()
+        #移除
+        #torch.cuda.synchronize()
 
-        torch.cuda.synchronize()
+        metric_logger.update(loss=loss.item())
 
-        metric_logger.update(qkloss=qk_loss.item())
-        metric_logger.update(vvloss=vv_loss.item())
 
         lr = optimizer.param_groups[0]["lr"]
         metric_logger.update(lr=lr)

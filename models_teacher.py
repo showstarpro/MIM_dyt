@@ -11,6 +11,8 @@
 
 from functools import partial
 
+from math import ceil
+
 import torch
 import torch.nn as nn
 
@@ -24,7 +26,8 @@ class MaskedAutoencoderViT(nn.Module):
     """
     def __init__(self, img_size=224, patch_size=16, in_chans=3,
                  embed_dim=1024, depth=24, num_heads=16,intermediate=18,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm):
+                 mlp_ratio=4., norm_layer=nn.LayerNorm, pretrain = False, 
+                 distill_layer = 'all', distill_dyt = 'all'):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -37,6 +40,9 @@ class MaskedAutoencoderViT(nn.Module):
             Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
+        self.pretrain = pretrain
+        self.distill_dyt = distill_dyt
+        self.distill_layer = distill_layer
         # --------------------------------------------------------------------------
 
         self.initialize_weights()
@@ -66,6 +72,18 @@ class MaskedAutoencoderViT(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
+    def match(self, x):
+        if x == '6':
+            return 0
+        if x == '8':
+            return 1
+        if x == '9':
+            return 2
+        if x == '11':
+            return 3
+        if x == '12':
+            return 4   
+        
     def forward_encoder(self, x):
         # embed patches
         x = self.patch_embed(x)
@@ -79,19 +97,44 @@ class MaskedAutoencoderViT(nn.Module):
         x = torch.cat((cls_tokens, x), dim=1)
 
         # apply Transformer blocks
-        count=0
+        # 改qk, vv为cls
+        cls_ls_1 = []
+        cls_ls_2 = []
+        count = 0
+
         for blk in self.blocks:
-            count+=1
-            if count==self.intermediate:
-                qk, vv = blk(x, return_relation=True)
-                return qk, vv
+            count += 1
+            if self.pretrain and ((self.distill_layer == 'all' and count in [12,15,18,21,24]) 
+                                  or (self.distill_layer != 'all' and int(self.distill_layer) == ceil(count/2))):
+                # 对teacher的相应层蒸馏，具体层数参考Tiny论文
+                x, cls_1, cls_2 = blk(x, return_cls_token=True)
+                cls_ls_1.append(cls_1)
+                cls_ls_2.append(cls_2)
             else:
                 x = blk(x)
-        return x
 
+        # distill_dyt表示用第几个dyt，distill_layer表示用第几层block
+        if self.pretrain:
+            if self.distill_dyt == 'before':
+                if self.distill_layer != 'all':
+                    return cls_ls_1[0]
+                else:
+                    return torch.stack(cls_ls_1)
+            elif self.distill_dyt == 'after':
+                if self.distill_layer != 'all':
+                    return cls_ls_2[0]
+                else:
+                    return torch.stack(cls_ls_2)
+            elif self.distill_dyt == 'all':
+                if self.distill_layer != 'all':
+                    return torch.stack([cls_ls_1[0], cls_ls_2[0]])
+                else:
+                    return torch.stack([torch.stack(cls_ls_1), torch.stack(cls_ls_2)])
+        else:
+            return x
+        
     def forward(self, imgs):
-        qk, vv = self.forward_encoder(imgs)
-        return qk, vv
+        return self.forward_encoder(imgs)
 
 
 def mae_vit_small(**kwargs):

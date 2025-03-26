@@ -18,8 +18,9 @@ from util.pos_embed import get_2d_sincos_pos_embed
 
 class TinyMIMViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, drop_path=0.1,
-                 embed_dim=1024, depth=24, num_heads=16,last_heads=12,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm):
+                 embed_dim=1024, depth=24, num_heads=16,last_heads=12, 
+                 mlp_ratio=4., norm_layer=nn.LayerNorm, pretrain = False, 
+                 distill_layer = 'all', distill_dyt = 'all', teacher_dim = 1024):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -29,10 +30,15 @@ class TinyMIMViT(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
         self.last_heads = last_heads
+        # 改norm_layer为dyt，在训练时替换
         self.blocks = nn.ModuleList([
             Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
             for i in range(depth-1)]+[Block(embed_dim, self.last_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)])
         self.norm = norm_layer(embed_dim)
+        self.pretrain = pretrain
+        self.distill_dyt = distill_dyt
+        self.distill_layer = distill_layer
+        self.projector = nn.Linear(embed_dim, teacher_dim)
         # --------------------------------------------------------------------------
 
         self.initialize_weights()
@@ -59,15 +65,30 @@ class TinyMIMViT(nn.Module):
             torch.nn.init.xavier_uniform_(m.weight)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
+        # 改norm init
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
+    def match(self, x):
+        if x == '6':
+            return 0
+        if x == '8':
+            return 1
+        if x == '9':
+            return 2
+        if x == '11':
+            return 3
+        if x == '12':
+            return 4        
+
     def forward_encoder(self, x):
         # embed patches
+        # x size [batch_size, channels, height, width]
         x = self.patch_embed(x)
 
         # add pos embed w/o cls token
+        # x size [batch_size, num_patches, embed_dim]
         x = x + self.pos_embed[:, 1:, :]
 
         # append cls token
@@ -75,26 +96,58 @@ class TinyMIMViT(nn.Module):
         cls_tokens = cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
 
+        # x size [batch_size, num_patches+1, embed_dim]
+
         # apply Transformer blocks
-        count=0
+
+        # cls_ls_1 存储第一个dyt后的cls_token(cls_1)，cls_ls_2同理
+        cls_ls_1 = []
+        cls_ls_2 = []
+        count = 0
+
+        # 改qk, vv为cls
         for blk in self.blocks:
-            count+=1
-            if count==12:
-                qk, vv = blk(x, return_relation=True)
-                return qk, vv
+            count += 1
+            if self.pretrain and ((self.distill_layer == 'all' and count in [6,8,9,11,12]) 
+                                  or (self.distill_layer != 'all' and int(self.distill_layer) == count)):
+                # 对student的相应层蒸馏，具体选择仿照参考Tiny论文
+                x, cls_1, cls_2 = blk(x, return_cls_token=True)
+                cls_ls_1.append(cls_1)
+                cls_ls_2.append(cls_2)
             else:
                 x = blk(x)
-        return x
+
+        # distill_dyt表示用第几个dyt，distill_layer表示用第几层block
+        if self.pretrain:
+            if self.distill_dyt == 'before':
+                if self.distill_layer != 'all':
+                    return cls_ls_1[0]
+                else:
+                    return torch.stack(cls_ls_1)
+            elif self.distill_dyt == 'after':
+                if self.distill_layer != 'all':
+                    return cls_ls_2[0]
+                else:
+                    return torch.stack(cls_ls_2)
+            elif self.distill_dyt == 'all':
+                if self.distill_layer != 'all':
+                    return torch.stack([cls_ls_1[0],cls_ls_2[0]])
+                else:
+                    return torch.stack([torch.stack(cls_ls_1), torch.stack(cls_ls_2)])
+        else:
+            return x
 
     def forward_kd_loss(self, pred, teacher_out):
-        loss = nn.KLDivLoss(reduction="none")(pred.log(), teacher_out).sum(-1)
+        loss = nn.KLDivLoss(reduction="none")(pred, teacher_out).sum(-1)
         return loss.mean()
-
+    
+    # 改loss
     def forward(self, imgs, teacher_out):
-        qk, vv = self.forward_encoder(imgs)
-        qk_loss = self.forward_kd_loss(qk, teacher_out[0])
-        vv_loss = self.forward_kd_loss(vv, teacher_out[1])
-        return qk_loss, vv_loss
+        cls = self.forward_encoder(imgs)
+        cls = (self.projector(cls)).log_softmax(dim=-1)
+        teacher_out = teacher_out.softmax(dim=-1)
+        return self.forward_kd_loss(cls, teacher_out)
+
 
 
 def tinymim_vit_tiny_patch16(**kwargs):
