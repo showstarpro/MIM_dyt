@@ -78,8 +78,9 @@ class Block(nn.Module):
             norm_x = self.norm1(x)
             x, qk, vv =self.attn(self.norm1(x), return_relation=True)
             x = x + self.drop_path(x)
+            norm_x_f = self.norm2(x)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
-            return x, qk, vv, norm_x
+            return x, qk, vv, norm_x, norm_x_f
         # x = x + self.drop_path(self.attn(self.norm1(x)))
         # x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
@@ -121,8 +122,9 @@ class Dyt_Block(nn.Module):
             dyt_x = self.dyt1(x)
             x, qk, vv = self.attn(self.dyt1(x), return_relation=True)
             x = x + self.drop_path(x)
+            dyt_x_f = self.dyt2(x)
             x = x + self.drop_path(self.mlp(self.dyt2(x)))
-            return x, qk, vv, dyt_x
+            return x, qk, vv, dyt_x, dyt_x_f
         # x = x + self.drop_path(self.attn(self.dyt1(x)))
         # x = x + self.drop_path(self.mlp(self.dyt2(x)))
         return x

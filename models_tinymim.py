@@ -43,6 +43,9 @@ class TinyMIMViT(nn.Module):
         self.dyt_proj = nn.Linear(embed_dim, 1024)  # 学生投影：768 → 1024
         self.teacher_proj = nn.Linear(1024, 1024)
 
+        self.dyt_f_proj = nn.Linear(embed_dim, 1024)  # 学生投影：768 → 1024
+        self.teacher_f_proj = nn.Linear(1024, 1024)
+
         self.x_proj = nn.Linear(embed_dim, 1024)  # 输出投影：768 → 1024
         self.t_proj = nn.Linear(1024, 1024)
 
@@ -94,18 +97,20 @@ class TinyMIMViT(nn.Module):
         qk = []
         vv = []
         norm_x = []
+        norm_x_f = []
         cls = []
         for blk in self.blocks:
             count+=1
             if count in self.layer:
-                x, qk_temp, vv_temp, norm_temp = blk(x, return_relation=True)
+                x, qk_temp, vv_temp, norm_temp, norm_temp_f = blk(x, return_relation=True)
                 qk.append(qk_temp)
                 vv.append(vv_temp)
                 norm_x.append(norm_temp)
+                norm_x_f.append(norm_temp_f)
                 cls.append(x[:,0,:])
             else:
-                x, _, _, _ = blk(x, return_relation=True)
-        return x, qk, vv, norm_x, cls
+                x, _, _, _, _ = blk(x, return_relation=True)
+        return x, qk, vv, norm_x,norm_x_f, cls
 
     def forward_kd_loss(self, pred, teacher_out):
         pred = pred.log()
@@ -126,18 +131,46 @@ class TinyMIMViT(nn.Module):
     def forward(self, imgs, teacher_out): # qk和vv最后有过softmax，但dyt和norm没有，计算kl散度之前要过softmax
         # 由于base和large的注意力投影头数目不一样，所以中间层的qk和vv无法做loss（tinny中把base的最后一层改成和large投影头一样了）
         # 此处先按照原本的做，可以同样更改头数目来做中间的qk和vv loss
-        x, qk, vv, dyt_x, cls = self.forward_encoder(imgs)
-        qk_loss = self.forward_kd_loss(qk[-1], teacher_out[1][-1])
-        vv_loss = self.forward_kd_loss(vv[-1], teacher_out[2][-1])
+        x, qk, vv, dyt_x, dyt_x_f, cls = self.forward_encoder(imgs)
 
-        dyt_proj = self.dyt_proj(dyt_x[-1])  # 维度变为 (4, 197, 1024)
-        teacher_proj = self.teacher_proj(teacher_out[3][-1])
-        dyt_loss = self.forward_kd_softmax_loss(dyt_proj, teacher_proj)
+        # 初始化各损失项
+        qk_loss = vv_loss = 0.0
+        dyt_loss = dyt_f_loss = 0.0
+        cls_loss = 0.0
 
-        cls_x = self.clsx_proj(cls[-1])
-        cls_t = self.clst_proj(teacher_out[4][-1])
-        cls_loss = self.forward_kd_softmax_loss(cls_x, cls_t)
-        return qk_loss, vv_loss, dyt_loss,cls_loss   # out_feature，
+        # 遍历所有指定层
+        for i in range(len(self.layer)):
+            # 计算 qk 和 vv 的最后一层损失
+            if i == len(self.layer) - 1:
+                qk_loss += self.forward_kd_loss(qk[i], teacher_out[1][i])
+                vv_loss += self.forward_kd_loss(vv[i], teacher_out[2][i])
+
+            # 处理 norm(attn) 和 norm(fnn) 的多层损失
+            # ---------------------
+            # 计算 norm(attn) 的损失
+            s_dyt = self.dyt_proj(dyt_x[i])  # 学生输出投影
+            t_dyt = self.teacher_proj(teacher_out[3][i])  # 教师输出投影
+            dyt_loss += self.forward_kd_softmax_loss(s_dyt, t_dyt)
+
+            # 计算 norm(fnn) 的损失
+            s_dyt_f = self.dyt_f_proj(dyt_x_f[i])
+            t_dyt_f = self.teacher_f_proj(teacher_out[4][i])
+            dyt_f_loss += self.forward_kd_softmax_loss(s_dyt_f, t_dyt_f)
+
+            # 计算 cls 的损失
+            s_cls = self.clsx_proj(cls[i])
+            t_cls = self.clst_proj(teacher_out[5][i])
+            cls_loss += self.forward_kd_softmax_loss(s_cls, t_cls)
+
+        # 平均损失（按层数）
+        num_layers = len(self.layer)
+        # qk_loss /= num_layers
+        # vv_loss /= num_layers
+        dyt_loss /= num_layers
+        dyt_f_loss /= num_layers
+        cls_loss /= num_layers
+
+        return qk_loss, vv_loss, dyt_loss, dyt_f_loss, cls_loss
 
 
 def tinymim_vit_tiny_patch16(**kwargs):

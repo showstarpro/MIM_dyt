@@ -85,22 +85,24 @@ class MaskedAutoencoderViT(nn.Module):
         qk = []
         vv = []
         norm_x = []
+        norm_x_f = []
         cls = []
         for blk in self.blocks:
             count+=1
             if count in self.intermediate:
-                x, qk_temp, vv_temp, norm_temp = blk(x, return_relation=True)
+                x, qk_temp, vv_temp, norm_temp, norm_temp_f = blk(x, return_relation=True)
                 qk.append(qk_temp)
                 vv.append(vv_temp)
                 norm_x.append(norm_temp)
+                norm_x_f.append(norm_temp_f)
                 cls.append(x[:,0,:])
             else:
-                x, _, _, _ = blk(x, return_relation=True)
-        return x, qk, vv, norm_x, cls
+                x, _, _, _,_ = blk(x, return_relation=True)
+        return x, qk, vv, norm_x,norm_x_f, cls
 
     def forward(self, imgs):
-        x, qk, vv, norm_x, cls = self.forward_encoder(imgs)
-        return x, qk, vv, norm_x, cls  # 返回最后的输出x，所有需要做loss的层的qk，vv, norm_x和cls列表
+        x, qk, vv, norm_x,norm_x_f, cls = self.forward_encoder(imgs)
+        return x, qk, vv, norm_x,norm_x_f, cls  # 返回最后的输出x，所有需要做loss的层的qk，vv, norm_x和cls列表
 
 
 def mae_vit_small(**kwargs):
