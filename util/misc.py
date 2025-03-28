@@ -18,8 +18,8 @@ from pathlib import Path
 
 import torch
 import torch.distributed as dist
-from torch._six import inf
-
+# from torch._six import inf
+import collections.abc as inf
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -85,7 +85,7 @@ class SmoothedValue(object):
 
 class MetricLogger(object):
     def __init__(self, delimiter="\t"):
-        self.meters = defaultdict(SmoothedValue)
+        self.meters = defaultdict(SmoothedValue)# 调试到这里就会卡住，直接运行到过去就可以
         self.delimiter = delimiter
 
     def update(self, **kwargs):
@@ -318,7 +318,7 @@ def load_model(args, model_without_ddp, optimizer, loss_scaler):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location='cpu', check_hash=True)
         else:
-            checkpoint = torch.load(args.resume, map_location='cpu')
+            checkpoint = torch.load(args.resume, map_location='cpu',weights_only=False) # 原本是True
         model_without_ddp.load_state_dict(checkpoint['model'])
         print("Resume checkpoint %s" % args.resume)
         if 'optimizer' in checkpoint and 'epoch' in checkpoint and not (hasattr(args, 'eval') and args.eval):
