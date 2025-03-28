@@ -17,6 +17,22 @@ import os
 import time
 from pathlib import Path
 
+# 111
+import torch
+import torch.backends.cudnn as cudnn
+from torch.utils.data import Dataset
+from torch.utils.tensorboard import SummaryWriter
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+import argparse
+import datetime
+import json
+import numpy as np
+import os
+import time
+from pathlib import Path
+from PIL import Image
+
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
@@ -35,20 +51,58 @@ from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 
 import models_vit
+import models_tinymim
 
 from engine_finetune import train_one_epoch, evaluate
 
 
+# class FakeImageNet(Dataset):
+#     def __init__(self, size=224, num_samples=1000):
+#         self.size = size
+#         self.num_samples = num_samples
+#         self.classes = ['class_{}'.format(i) for i in range(1000)]
+#         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+#
+#         # 生成符合TwoCropsTransform格式的数据
+#         self.samples = [
+#             (
+#                 # 模拟TwoCropsTransform的输出：包含两个视图的列表
+#                 [
+#                     self._generate_image(),  # 教师视图
+#                     self._generate_image()  # 学生视图
+#                 ],
+#                 np.random.randint(0, 1000)  # 标签
+#             )
+#             for _ in range(num_samples)
+#         ]
+#
+#     def _generate_image(self):
+#         """生成随机PIL图像"""
+#         return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
+#
+#     def __getitem__(self, index):
+#         """返回格式: ( [view1_tensor, view2_tensor], label ) """
+#         views, label = self.samples[index]
+#
+#         processed_views = [
+#             transforms.ToTensor()(view) for view in views
+#         ]
+#
+#         return processed_views[0], label  # 返回二元组(views, label)
+#
+#     def __len__(self):
+#         return self.num_samples
+
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
-    parser.add_argument('--batch_size', default=64, type=int,
+    parser.add_argument('--batch_size', default=4, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
     parser.add_argument('--accum_iter', default=1, type=int,
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
+    parser.add_argument('--model', default='TinyMIMViT', type=str, metavar='MODEL',
                         help='Name of model to train')
 
     parser.add_argument('--input_size', default=224, type=int,
@@ -109,7 +163,7 @@ def get_args_parser():
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
 
     # * Finetuning params
-    parser.add_argument('--finetune', default='',
+    parser.add_argument('--finetune', default='output_dir/checkpoint-0.pth',
                         help='finetune from checkpoint')
     parser.add_argument('--global_pool', action='store_true')
     parser.set_defaults(global_pool=True)
@@ -117,7 +171,7 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
+    parser.add_argument('--data_path', default='lpai/dataset/imagenet-1k/0-1-0/', type=str,
                         help='dataset path')
     parser.add_argument('--nb_classes', default=1000, type=int,
                         help='number of the classification types')
@@ -138,7 +192,7 @@ def get_args_parser():
                         help='Perform evaluation only')
     parser.add_argument('--dist_eval', action='store_true', default=False,
                         help='Enabling distributed evaluation (recommended during training for faster monitor')
-    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--num_workers', default=0, type=int)
     parser.add_argument('--pin_mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no_pin_mem', action='store_false', dest='pin_mem')
@@ -172,6 +226,10 @@ def main(args):
 
     dataset_train = build_dataset(is_train=True, args=args)
     dataset_val = build_dataset(is_train=False, args=args)
+
+
+    # dataset_train = FakeImageNet()
+    # dataset_val = FakeImageNet()
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -224,28 +282,39 @@ def main(args):
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
     
-    model = models_vit.__dict__[args.model](
+    # model = models_vit.__dict__[args.model](
+    #     num_classes=args.nb_classes,
+    #     drop_path_rate=args.drop_path,
+    #     global_pool=args.global_pool,
+    # )
+    model = models_tinymim.__dict__[args.model](
         num_classes=args.nb_classes,
-        drop_path_rate=args.drop_path,
-        global_pool=args.global_pool,
+        drop_path=args.drop_path,
+        # 确保参数名与模型定义匹配
+        embed_dim=768,  # 根据具体模型设置
+        last_heads=16,  # 根据base模型设置
     )
 
     if args.finetune and not args.eval:
-        checkpoint = torch.load(args.finetune, map_location='cpu')
+        checkpoint = torch.load(args.finetune, map_location='cpu',weights_only=False)
 
         print("Load pre-trained checkpoint from: %s" % args.finetune)
-        checkpoint_model = checkpoint['model']
-        state_dict = model.state_dict()
-        for k in ['head.weight', 'head.bias']:
-            if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-                print(f"Removing key {k} from pretrained checkpoint")
-                del checkpoint_model[k]
+        # checkpoint_model = checkpoint['model']
+        # state_dict = model.state_dict()
+        # for k in ['head.weight', 'head.bias']:
+        #     if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
+        #         print(f"Removing key {k} from pretrained checkpoint")
+        #         del checkpoint_model[k]
+        filtered_state_dict = { # 移除微调没用的几个投影层
+            k: v for k, v in checkpoint['model'].items()
+            if not k.startswith(('dyt_proj', 'teacher_proj', 'clsx_proj'))
+        }
 
         # interpolate position embedding
-        interpolate_pos_embed(model, checkpoint_model)
+        interpolate_pos_embed(model, filtered_state_dict)
 
         # load pre-trained model
-        msg = model.load_state_dict(checkpoint_model, strict=False)
+        msg = model.load_state_dict(filtered_state_dict, strict=False)
         print(msg)
         #
         # if args.global_pool:
@@ -255,6 +324,7 @@ def main(args):
 
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
+        model.head.bias.data.zero_()
 
     model.to(device)
 

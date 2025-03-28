@@ -42,6 +42,7 @@ def train_one_epoch(model: torch.nn.Module,
     """
 
     # 训练模式设置
+
     model.train(True)
     metric_logger = misc.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -92,7 +93,8 @@ def train_one_epoch(model: torch.nn.Module,
 
         # 总损失计算
         # loss = dyt_loss
-        loss = 0*qk_loss + 0*vv_loss + 1*dyt_loss + 1*dyt_f_loss + 1*cls_loss  # 可做加权
+        loss_weight = args.loss_weight
+        loss = loss_weight[0]*qk_loss + loss_weight[1]*vv_loss + loss_weight[2]*dyt_loss + loss_weight[3]*dyt_f_loss + loss_weight[4]*cls_loss  # 可做加权
         loss_value = loss.item()  # 获取标量损失值
 
         # ==================== 损失检查 ====================

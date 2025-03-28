@@ -74,16 +74,15 @@ class Block(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def forward(self, x, return_relation=False):
-        if return_relation:
-            norm_x = self.norm1(x)
-            x, qk, vv =self.attn(self.norm1(x), return_relation=True)
-            x = x + self.drop_path(x)
-            norm_x_f = self.norm2(x)
-            x = x + self.drop_path(self.mlp(self.norm2(x)))
-            return x, qk, vv, norm_x, norm_x_f
+        norm_x = self.norm1(x)
+        x, qk, vv =self.attn(self.norm1(x), return_relation=True)
+        x = x + self.drop_path(x)
+        norm_x_f = self.norm2(x)
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        return x, qk, vv, norm_x, norm_x_f
         # x = x + self.drop_path(self.attn(self.norm1(x)))
         # x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
+
 
 
 # 定义DyT层
@@ -117,17 +116,16 @@ class Dyt_Block(nn.Module):
                        act_layer=act_layer, drop=drop)
 
     def forward(self, x, return_relation=False):
-        if return_relation:
-            # 使用DyT代替原始归一化
-            dyt_x = self.dyt1(x)
-            x, qk, vv = self.attn(self.dyt1(x), return_relation=True)
-            x = x + self.drop_path(x)
-            dyt_x_f = self.dyt2(x)
-            x = x + self.drop_path(self.mlp(self.dyt2(x)))
-            return x, qk, vv, dyt_x, dyt_x_f
+        # 使用DyT代替原始归一化
+        dyt_x = self.dyt1(x)
+        x, qk, vv = self.attn(self.dyt1(x), return_relation=True)
+        x = x + self.drop_path(x)
+        dyt_x_f = self.dyt2(x)
+        x = x + self.drop_path(self.mlp(self.dyt2(x)))
+        return x, qk, vv, dyt_x, dyt_x_f
         # x = x + self.drop_path(self.attn(self.dyt1(x)))
         # x = x + self.drop_path(self.mlp(self.dyt2(x)))
-        return x
+
 
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
