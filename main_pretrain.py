@@ -50,7 +50,7 @@ def get_args_parser():
     # Training hyperparameters
     parser.add_argument('--batch_size', default=4, type=int,
                         help='Per-GPU batch size (effective batch = batch_size * accum_iter * num_gpus)')
-    parser.add_argument('--epochs', default=400, type=int,
+    parser.add_argument('--epochs', default=100, type=int,
                         help='Total number of training epochs')
     parser.add_argument('--start_epoch', default=0, type=int, # 加了一个start_epochs，本来没有但代码里有用
                         help='start of training epochs')
@@ -221,7 +221,7 @@ def main(args):
                 transforms.ToTensor()(view) for view in views
             ]
 
-            return processed_views, label  # 关键修改：返回二元组(views, label)
+            return processed_views, label  # 返回二元组(views, label)
 
         def __len__(self):
             return self.num_samples
