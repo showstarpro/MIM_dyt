@@ -48,7 +48,7 @@ def get_args_parser():
     parser = argparse.ArgumentParser('MAE pre-training', add_help=False)
 
     # Training hyperparameters
-    parser.add_argument('--batch_size', default=4, type=int,
+    parser.add_argument('--batch_size', default=64, type=int,
                         help='Per-GPU batch size (effective batch = batch_size * accum_iter * num_gpus)')
     parser.add_argument('--epochs', default=100, type=int,
                         help='Total number of training epochs')
@@ -76,7 +76,7 @@ def get_args_parser():
                         help='Number of warmup epochs for learning rate')
 
     # Dataset configuration
-    parser.add_argument('--data_path', default='lpai/dataset/imagenet-1k/0-1-0', type=str,
+    parser.add_argument('--data_path', default='/lpai/dataset/imagenet-1k/0-1-0', type=str,
                         help='Root directory path for dataset')
     parser.add_argument('--output_dir', default='./output_dir',
                         help='Output directory for saving checkpoints')
@@ -110,19 +110,19 @@ def get_args_parser():
                         help='URL used to initialize distributed training')
 
     # Teacher model configuration
-    parser.add_argument("--teacher_path", default="mae_pretrain_vit_large.pth",type=str,
+    parser.add_argument("--teacher_path", default="/lpai/MIM_dyt-master/mae_pretrain_vit_large.pth",type=str,
                         help='File path to pre-trained teacher model weights')
     parser.add_argument("--teacher_model", default = "mae_vit_large",type=str,
                         help='Architecture name of teacher model')
 
     # 做损失的层数
-    parser.add_argument('--intermediate', default=[1,3,5,12,18],    # teacher层数
+    parser.add_argument('--intermediate', default=[1,3,5,12,18], nargs='+', type=int,    # teacher层数
                         help='Layer index for teacher feature distillation')
-    parser.add_argument('--layer', default=[1,3,5, 8, 12],           # student层数
+    parser.add_argument('--layer', default=[1,3,5, 8, 12], nargs='+', type=int,           # student层数
                         help='Layer index for student feature distillation')
 
     # 损失的权重
-    parser.add_argument('--loss_weight', default=[0,0,1,1,1],  # qk，vv，dyt，dyt_f，cls
+    parser.add_argument('--loss_weight', default=[0,0,1,1,1], nargs='+', type=int,  # qk，vv，dyt，dyt_f，cls
                         help='the loss weight with qk vv dyt dyt_f cls')
 
     return parser
@@ -193,46 +193,6 @@ def main(args):
                                          transform=TwoCropsTransform(common_transform, teacher_transform,
                                                                      student_transform))
     print(dataset_train)
-    # class FakeImageNet(Dataset):
-    #     def __init__(self, size=224, num_samples=1000):
-    #         self.size = size
-    #         self.num_samples = num_samples
-    #         self.classes = ['class_{}'.format(i) for i in range(1000)]
-    #         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-    #
-    #         # 生成符合TwoCropsTransform格式的数据
-    #         self.samples = [
-    #             (
-    #                 # 模拟TwoCropsTransform的输出：包含两个视图的列表
-    #                 [
-    #                     self._generate_image(),  # 教师视图
-    #                     self._generate_image()  # 学生视图
-    #                 ],
-    #                 np.random.randint(0, 1000)  # 标签
-    #             )
-    #             for _ in range(num_samples)
-    #         ]
-    #
-    #     def _generate_image(self):
-    #         """生成随机PIL图像"""
-    #         return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
-    #
-    #     def __getitem__(self, index):
-    #         """返回格式: ( [view1_tensor, view2_tensor], label ) """
-    #         views, label = self.samples[index]
-    #
-    #         processed_views = [
-    #             transforms.ToTensor()(view) for view in views
-    #         ]
-    #
-    #         return processed_views, label  # 返回二元组(views, label)
-    #
-    #     def __len__(self):
-    #         return self.num_samples
-    #
-    #
-    # dataset_train = FakeImageNet()
-    # print(f'Dataset information:\n{dataset_train}')
 
     # Distributed sampler configuration
     if True:  # Always use distributed mode in this setup
