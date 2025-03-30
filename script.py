@@ -8,7 +8,8 @@ torchrun --nproc_per_node 8 main_pretrain.py \
     --batch_size 128 \
     --epochs 100 \
     --data_path /lpai/dataset/imagenet-1k/0-1-0 \
-    --output_dir /lpai/output/models
+    --output_dir /lpai/output/models \
+    --teacher_path /lpai/MIM_dyt-master/mae_pretrain_vit_large.pth \
     --lr 5e-4 \
     --weight_decay 0.05 \
     --num_workers 16 \
