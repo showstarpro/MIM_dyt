@@ -9,16 +9,18 @@
 # DeiT: https://github.com/facebookresearch/deit
 # --------------------------------------------------------
 
+# 供student model(norm,distill)使用
+
 from functools import partial
 import torch
 import torch.nn as nn
-from vit import PatchEmbed, Block
+from vit import PatchEmbed, Block, DyT_Block
 from util.pos_embed import get_2d_sincos_pos_embed
 
 
-class TinyMIMViT(nn.Module):
+class TinyMIMViT_dyt(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, drop_path=0.1,
-                 embed_dim=1024, depth=24, num_heads=16,last_heads=12, 
+                 embed_dim=1024, depth=24, num_heads=16,last_heads=12, num_classes=1000,
                  mlp_ratio=4., norm_layer=nn.LayerNorm, pretrain = False, 
                  distill_layer = 'all', distill_dyt = 'all', teacher_dim = 1024):
         super().__init__()
@@ -30,15 +32,16 @@ class TinyMIMViT(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
         self.last_heads = last_heads
-        # 改norm_layer为dyt，在训练时替换
+        # 改norm_layer为dyt
         self.blocks = nn.ModuleList([
-            Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
-            for i in range(depth-1)]+[Block(embed_dim, self.last_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)])
+            DyT_Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
+            for i in range(depth-1)]+[DyT_Block(embed_dim, self.last_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)])
         self.norm = norm_layer(embed_dim)
         self.pretrain = pretrain
         self.distill_dyt = distill_dyt
         self.distill_layer = distill_layer
         self.projector = nn.Linear(embed_dim, teacher_dim)
+        self.cls_head = nn.Linear(embed_dim, num_classes)
         # --------------------------------------------------------------------------
 
         self.initialize_weights()
@@ -65,7 +68,7 @@ class TinyMIMViT(nn.Module):
             torch.nn.init.xavier_uniform_(m.weight)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
-        # 改norm init
+        # 不用改，用DyT自带的init weight就行
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
@@ -141,31 +144,37 @@ class TinyMIMViT(nn.Module):
         loss = nn.KLDivLoss(reduction="none")(pred, teacher_out).sum(-1)
         return loss.mean()
     
-    # 改loss
+    # pretrain和finetune不同
     def forward(self, imgs, teacher_out):
-        cls = self.forward_encoder(imgs)
-        cls = (self.projector(cls)).log_softmax(dim=-1)
-        teacher_out = teacher_out.softmax(dim=-1)
-        return self.forward_kd_loss(cls, teacher_out)
+        if self.pretrain:
+            cls = self.forward_encoder(imgs)
+            cls = (self.projector(cls)).log_softmax(dim=-1)
+            teacher_out = teacher_out.softmax(dim=-1)
+            return self.forward_kd_loss(cls, teacher_out)
+        else:
+            x = self.forward_encoder(imgs)
+            x = self.norm(x[:,0]) #这一层没有换成dyt
+            x = self.cls_head(x) 
+            return x
 
 
 
 def tinymim_vit_tiny_patch16(**kwargs):
-    model = TinyMIMViT(
+    model = TinyMIMViT_dyt(
         patch_size=16, embed_dim=192, depth=12, num_heads=6, drop_path=0.1,last_heads=12,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 
 def tinymim_vit_small_patch16(**kwargs):
-    model = TinyMIMViT(
+    model = TinyMIMViT_dyt(
         patch_size=16, embed_dim=384, depth=12, num_heads=6,drop_path=0.1,last_heads=12,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
 
 def tinymim_vit_base_patch16(**kwargs):
-    model = TinyMIMViT(
+    model = TinyMIMViT_dyt(
         patch_size=16, embed_dim=768, depth=12, num_heads=12, drop_path=0.1,last_heads=16,
         mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model

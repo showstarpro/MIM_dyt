@@ -6,6 +6,7 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.helpers import load_pretrained
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
+from dyt import DynamicTanh
 
 
 class Mlp(nn.Module):
@@ -73,14 +74,40 @@ class Block(nn.Module):
 
     def forward(self, x, return_cls_token=False):
         if return_cls_token:
-            dyt_1 = self.norm1(x)
+            norm_1 = self.norm1(x)
+            x = x + self.drop_path(self.attn(norm_1))
+            norm_2 = self.norm2(x)
+            x = x + self.drop_path(self.mlp(norm_2))
+            # 返回token维度中的cls_token
+            return x, norm_1[:,0,:], norm_2[:,0,:]
+        x = x + self.drop_path(self.attn(self.norm1(x)))
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        return x
+
+
+class DyT_Block(nn.Module):
+    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+                 drop_path=0., act_layer=nn.GELU, norm_layer=DynamicTanh):
+        super().__init__()
+        self.dyt1 = DynamicTanh(normalized_shape=dim)
+        self.attn = Attention(
+            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
+        # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.dyt2 = DynamicTanh(normalized_shape=dim)
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+
+    def forward(self, x, return_cls_token=False):
+        if return_cls_token:
+            dyt_1 = self.dyt1(x)
             x = x + self.drop_path(self.attn(dyt_1))
-            dyt_2 = self.norm2(x)
+            dyt_2 = self.dyt2(x)
             x = x + self.drop_path(self.mlp(dyt_2))
             # 只返回token维度中的cls_token
             return x, dyt_1[:,0,:], dyt_2[:,0,:]
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        x = x + self.drop_path(self.attn(self.dyt1(x)))
+        x = x + self.drop_path(self.mlp(self.dyt2(x)))
         return x
 
 

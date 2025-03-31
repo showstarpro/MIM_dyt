@@ -22,7 +22,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-from dyt import convert_ln_to_dyt
+
 
 import timm
 
@@ -35,7 +35,9 @@ import util.misc as misc
 #from util.misc import NativeScalerWithGradNormCount as NativeScaler
 from util.misc import NativeScaler
 
-import models_tinymim
+import models_tinymim_dyt
+import models_tinymim_norm
+
 
 from engine_pretrain import train_one_epoch
 import models_teacher
@@ -201,12 +203,14 @@ def main(args):
         drop_last=True,
     )
     # define the model
-    model = models_tinymim.__dict__[args.model](pretrain=args.pretrain, distill_layer=args.distill_layer, 
+    
+    if args.dynamic_tanh:
+        model = models_tinymim_dyt.__dict__[args.model](pretrain=args.pretrain, distill_layer=args.distill_layer, 
+                                                distill_dyt = args.distill_dyt)
+    else:
+        model = models_tinymim_norm.__dict__[args.model](pretrain=args.pretrain, distill_layer=args.distill_layer, 
                                                 distill_dyt = args.distill_dyt)
 
-    # 添加：norm转化为DyT
-    if args.dynamic_tanh:
-        model = convert_ln_to_dyt(model)
 
     teacher = models_teacher.__dict__[args.teacher_model](pretrain=args.pretrain, distill_layer=args.distill_layer, 
                                                 distill_dyt = args.distill_dyt)

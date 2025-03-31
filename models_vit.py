@@ -8,6 +8,8 @@
 # MAE: https://github.com/facebookresearch/mae
 # --------------------------------------------------------
 
+# 供teacher model使用，充当architecture
+
 from functools import partial
 
 import torch
