@@ -191,49 +191,49 @@ def main(args):
 
     # Dataset preparation ---------------------------------------------------------
     # Synthetic dataset for testing (comment out for real data)
-    # dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'),
-    #                                      transform=TwoCropsTransform(common_transform, teacher_transform,
-    #                                                                  student_transform))
-    # print(dataset_train)
-    class FakeImageNet(Dataset):
-        def __init__(self, size=224, num_samples=1000):
-            self.size = size
-            self.num_samples = num_samples
-            self.classes = ['class_{}'.format(i) for i in range(1000)]
-            self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-
-            # 生成符合TwoCropsTransform格式的数据
-            self.samples = [
-                (
-                    # 模拟TwoCropsTransform的输出：包含两个视图的列表
-                    [
-                        self._generate_image(),  # 教师视图
-                        self._generate_image()  # 学生视图
-                    ],
-                    np.random.randint(0, 1000)  # 标签
-                )
-                for _ in range(num_samples)
-            ]
-
-        def _generate_image(self):
-            """生成随机PIL图像"""
-            return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
-
-        def __getitem__(self, index):
-            """返回格式: ( [view1_tensor, view2_tensor], label ) """
-            views, label = self.samples[index]
-
-            processed_views = [
-                transforms.ToTensor()(view) for view in views
-            ]
-
-            return processed_views, label  # 返回二元组(views, label)
-
-        def __len__(self):
-            return self.num_samples
-
-
-    dataset_train = FakeImageNet()
+    dataset_train = datasets.ImageFolder(os.path.join(args.data_path, 'train'),
+                                         transform=TwoCropsTransform(common_transform, teacher_transform,
+                                                                     student_transform))
+    print(dataset_train)
+    # class FakeImageNet(Dataset):
+    #     def __init__(self, size=224, num_samples=1000):
+    #         self.size = size
+    #         self.num_samples = num_samples
+    #         self.classes = ['class_{}'.format(i) for i in range(1000)]
+    #         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+    #
+    #         # 生成符合TwoCropsTransform格式的数据
+    #         self.samples = [
+    #             (
+    #                 # 模拟TwoCropsTransform的输出：包含两个视图的列表
+    #                 [
+    #                     self._generate_image(),  # 教师视图
+    #                     self._generate_image()  # 学生视图
+    #                 ],
+    #                 np.random.randint(0, 1000)  # 标签
+    #             )
+    #             for _ in range(num_samples)
+    #         ]
+    #
+    #     def _generate_image(self):
+    #         """生成随机PIL图像"""
+    #         return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
+    #
+    #     def __getitem__(self, index):
+    #         """返回格式: ( [view1_tensor, view2_tensor], label ) """
+    #         views, label = self.samples[index]
+    #
+    #         processed_views = [
+    #             transforms.ToTensor()(view) for view in views
+    #         ]
+    #
+    #         return processed_views, label  # 返回二元组(views, label)
+    #
+    #     def __len__(self):
+    #         return self.num_samples
+    #
+    #
+    # dataset_train = FakeImageNet()
     # print(f'Dataset information:\n{dataset_train}')
 
     # Distributed sampler configuration

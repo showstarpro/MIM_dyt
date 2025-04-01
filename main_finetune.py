@@ -56,42 +56,42 @@ import models_tinymim
 from engine_finetune import train_one_epoch, evaluate
 
 
-class FakeImageNet(Dataset):
-    def __init__(self, size=224, num_samples=1000):
-        self.size = size
-        self.num_samples = num_samples
-        self.classes = ['class_{}'.format(i) for i in range(1000)]
-        self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-
-        # 生成符合TwoCropsTransform格式的数据
-        self.samples = [
-            (
-                # 模拟TwoCropsTransform的输出：包含两个视图的列表
-                [
-                    self._generate_image(),  # 教师视图
-                    self._generate_image()  # 学生视图
-                ],
-                np.random.randint(0, 1000)  # 标签
-            )
-            for _ in range(num_samples)
-        ]
-
-    def _generate_image(self):
-        """生成随机PIL图像"""
-        return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
-
-    def __getitem__(self, index):
-        """返回格式: ( [view1_tensor, view2_tensor], label ) """
-        views, label = self.samples[index]
-
-        processed_views = [
-            transforms.ToTensor()(view) for view in views
-        ]
-
-        return processed_views[0], label  # 返回二元组(views, label)
-
-    def __len__(self):
-        return self.num_samples
+# class FakeImageNet(Dataset):
+#     def __init__(self, size=224, num_samples=1000):
+#         self.size = size
+#         self.num_samples = num_samples
+#         self.classes = ['class_{}'.format(i) for i in range(1000)]
+#         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+#
+#         # 生成符合TwoCropsTransform格式的数据
+#         self.samples = [
+#             (
+#                 # 模拟TwoCropsTransform的输出：包含两个视图的列表
+#                 [
+#                     self._generate_image(),  # 教师视图
+#                     self._generate_image()  # 学生视图
+#                 ],
+#                 np.random.randint(0, 1000)  # 标签
+#             )
+#             for _ in range(num_samples)
+#         ]
+#
+#     def _generate_image(self):
+#         """生成随机PIL图像"""
+#         return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
+#
+#     def __getitem__(self, index):
+#         """返回格式: ( [view1_tensor, view2_tensor], label ) """
+#         views, label = self.samples[index]
+#
+#         processed_views = [
+#             transforms.ToTensor()(view) for view in views
+#         ]
+#
+#         return processed_views[0], label  # 返回二元组(views, label)
+#
+#     def __len__(self):
+#         return self.num_samples
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
@@ -227,12 +227,12 @@ def main(args):
 
     cudnn.benchmark = True
 
-    # dataset_train = build_dataset(is_train=True, args=args)
-    # dataset_val = build_dataset(is_train=False, args=args)
+    dataset_train = build_dataset(is_train=True, args=args)
+    dataset_val = build_dataset(is_train=False, args=args)
 
 
-    dataset_train = FakeImageNet()
-    dataset_val = FakeImageNet()
+    # dataset_train = FakeImageNet()
+    # dataset_val = FakeImageNet()
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
