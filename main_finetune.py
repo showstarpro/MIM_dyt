@@ -56,42 +56,42 @@ import models_tinymim
 from engine_finetune import train_one_epoch, evaluate
 
 
-# class FakeImageNet(Dataset):
-#     def __init__(self, size=224, num_samples=1000):
-#         self.size = size
-#         self.num_samples = num_samples
-#         self.classes = ['class_{}'.format(i) for i in range(1000)]
-#         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
-#
-#         # 生成符合TwoCropsTransform格式的数据
-#         self.samples = [
-#             (
-#                 # 模拟TwoCropsTransform的输出：包含两个视图的列表
-#                 [
-#                     self._generate_image(),  # 教师视图
-#                     self._generate_image()  # 学生视图
-#                 ],
-#                 np.random.randint(0, 1000)  # 标签
-#             )
-#             for _ in range(num_samples)
-#         ]
-#
-#     def _generate_image(self):
-#         """生成随机PIL图像"""
-#         return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
-#
-#     def __getitem__(self, index):
-#         """返回格式: ( [view1_tensor, view2_tensor], label ) """
-#         views, label = self.samples[index]
-#
-#         processed_views = [
-#             transforms.ToTensor()(view) for view in views
-#         ]
-#
-#         return processed_views[0], label  # 返回二元组(views, label)
-#
-#     def __len__(self):
-#         return self.num_samples
+class FakeImageNet(Dataset):
+    def __init__(self, size=224, num_samples=1000):
+        self.size = size
+        self.num_samples = num_samples
+        self.classes = ['class_{}'.format(i) for i in range(1000)]
+        self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+
+        # 生成符合TwoCropsTransform格式的数据
+        self.samples = [
+            (
+                # 模拟TwoCropsTransform的输出：包含两个视图的列表
+                [
+                    self._generate_image(),  # 教师视图
+                    self._generate_image()  # 学生视图
+                ],
+                np.random.randint(0, 1000)  # 标签
+            )
+            for _ in range(num_samples)
+        ]
+
+    def _generate_image(self):
+        """生成随机PIL图像"""
+        return Image.fromarray(np.random.randint(0, 255, (self.size, self.size, 3), dtype=np.uint8))
+
+    def __getitem__(self, index):
+        """返回格式: ( [view1_tensor, view2_tensor], label ) """
+        views, label = self.samples[index]
+
+        processed_views = [
+            transforms.ToTensor()(view) for view in views
+        ]
+
+        return processed_views[0], label  # 返回二元组(views, label)
+
+    def __len__(self):
+        return self.num_samples
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
@@ -171,7 +171,7 @@ def get_args_parser():
                         help='Use class token instead of global pool for classification')
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='lpai/dataset/imagenet-1k/0-1-0/', type=str,
+    parser.add_argument('--data_path', default='lpai/dataset/imagenet-1k/0-1-0', type=str,
                         help='dataset path')
     parser.add_argument('--nb_classes', default=1000, type=int,
                         help='number of the classification types')
@@ -206,6 +206,9 @@ def get_args_parser():
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
 
+    parser.add_argument('--norm', default='norm', type=str,
+                        help='norm or dyt')
+
     return parser
 
 
@@ -224,12 +227,12 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = build_dataset(is_train=True, args=args)
-    dataset_val = build_dataset(is_train=False, args=args)
+    # dataset_train = build_dataset(is_train=True, args=args)
+    # dataset_val = build_dataset(is_train=False, args=args)
 
 
-    # dataset_train = FakeImageNet()
-    # dataset_val = FakeImageNet()
+    dataset_train = FakeImageNet()
+    dataset_val = FakeImageNet()
 
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -293,8 +296,9 @@ def main(args):
         # 确保参数名与模型定义匹配
         embed_dim=768,  # 根据具体模型设置
         last_heads=16,  # 根据base模型设置
+        norm_layer = args.norm
     )
-
+    # 因为初始化的时候要根据norm_type来确定是哪个模型，所以直接初始化再传参数进去，根据传进去的norm_type是不行的。
     if args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu',weights_only=False)
 
@@ -307,7 +311,7 @@ def main(args):
         #         del checkpoint_model[k]
         filtered_state_dict = { # 移除微调没用的几个投影层
             k: v for k, v in checkpoint['model'].items()
-            if not k.startswith(('dyt_proj', 'teacher_proj', 'clsx_proj'))
+            if not k.startswith(('dyt_proj', 'teacher_proj', 'clsx_proj','dyt_f_proj','teacher_f_proj','x_proj','t_proj','clst_proj'))
         }
 
         # interpolate position embedding

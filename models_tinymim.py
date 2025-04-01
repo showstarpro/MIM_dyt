@@ -12,14 +12,14 @@
 from functools import partial
 import torch
 import torch.nn as nn
-from vit import PatchEmbed, Block, Dyt_Block
+from vit import PatchEmbed, Block, Dyt_Block, DyT
 from util.pos_embed import get_2d_sincos_pos_embed
 
 
 class TinyMIMViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, drop_path=0.1,
-                 embed_dim=1024, depth=24, num_heads=16, last_heads=12,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm, layer=None, num_classes=1000,
+                 embed_dim=1024,tea_embed_dim = 1024, depth=24, num_heads=16, last_heads=12,
+                 mlp_ratio=4., norm_layer="dyt", layer=None, num_classes=1000,
                  finetune=False):
         super().__init__()
 
@@ -34,26 +34,40 @@ class TinyMIMViT(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False)  # fixed sin-cos embedding
         self.last_heads = last_heads
+
+        self.norm_type = norm_layer.lower()  # 统一为小写
+        # 根据norm类型选择归一化层
+        if self.norm_type == "dyt":
+            self.norm_layer = DyT(embed_dim, alpha_init_value=0.5)
+            block_class = Dyt_Block
+        elif self.norm_type == "norm":
+            self.norm_layer = nn.LayerNorm(embed_dim)
+            block_class = Block
+        else:
+            raise NotImplementedError
+
         self.blocks = nn.ModuleList([
-            Dyt_Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
-            for i in range(depth-1)]+[Dyt_Block(embed_dim, self.last_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)])
-        self.norm = norm_layer(embed_dim)
+                                        block_class(embed_dim, num_heads, mlp_ratio, drop_path=drop_path,
+                                                    qkv_bias=True, qk_scale=None) for _ in range(depth - 1)
+                                    ] + [block_class(embed_dim, self.last_heads, mlp_ratio,
+                                                     qkv_bias=True, qk_scale=None)])
         # --------------------------------------------------------------------------
 
         self.initialize_weights()
+        # self.norm_layer = partial(nn.LayerNorm, eps=1e-6)
 
         # 线性层
-        self.dyt_proj = nn.Linear(embed_dim, 1024)  # 学生投影：768 → 1024
-        self.teacher_proj = nn.Linear(1024, 1024)
+        self.dyt_proj = nn.Linear(embed_dim, tea_embed_dim)  # 学生投影：768 → 1024
+        self.teacher_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
-        self.dyt_f_proj = nn.Linear(embed_dim, 1024)  # 学生投影：768 → 1024
-        self.teacher_f_proj = nn.Linear(1024, 1024)
+        self.dyt_f_proj = nn.Linear(embed_dim, tea_embed_dim)  # 学生投影：768 → 1024
+        self.teacher_f_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
-        self.x_proj = nn.Linear(embed_dim, 1024)  # 输出投影：768 → 1024
-        self.t_proj = nn.Linear(1024, 1024)
+        self.x_proj = nn.Linear(embed_dim, tea_embed_dim)  # 输出投影：768 → 1024
+        self.t_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
-        self.clsx_proj = nn.Linear(embed_dim, 1024)  # 输出投影：768 → 1024
-        self.clst_proj = nn.Linear(1024, 1024)
+        self.clsx_proj = nn.Linear(embed_dim, tea_embed_dim)  # 输出投影：768 → 1024
+        self.clst_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
         self.layer = layer
         
@@ -151,9 +165,9 @@ class TinyMIMViT(nn.Module):
             # 遍历所有指定层
             for i in range(len(self.layer)):
                 # 计算 qk 和 vv 的最后一层损失
-                if i == len(self.layer) - 1:
-                    qk_loss += self.forward_kd_loss(qk[i], teacher_out[1][i])
-                    vv_loss += self.forward_kd_loss(vv[i], teacher_out[2][i])
+                # if i == len(self.layer) - 1:
+                #     qk_loss += self.forward_kd_loss(qk[i], teacher_out[1][i])
+                #     vv_loss += self.forward_kd_loss(vv[i], teacher_out[2][i])
 
                 # 处理 norm(attn) 和 norm(fnn) 的多层损失
                 # ---------------------
@@ -185,7 +199,7 @@ class TinyMIMViT(nn.Module):
     def forward_finetune(self, imgs):
         """微调用前向传播"""
         x, _, _, _, _, _ = self.forward_encoder(imgs)  # 仅用分类输出
-        x = self.norm(x[:, 0])  # 取分类令牌
+        x = self.norm_layer(x[:, 0])  # 取分类令牌
         return self.head(x)  # 输出logits
 
     def no_weight_decay(self):
@@ -194,24 +208,24 @@ class TinyMIMViT(nn.Module):
         return no_decay
 
 
-def tinymim_vit_tiny_patch16(**kwargs):
+def tinymim_vit_tiny_patch16(norm = "dyt",**kwargs):
     model = TinyMIMViT(
-        patch_size=16, embed_dim=192, depth=12, num_heads=6, drop_path=0.1,last_heads=12,
-        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+        patch_size=16, embed_dim=192, depth=12,tea_embed_dim = 1024, num_heads=6, drop_path=0.1,last_heads=12,
+        mlp_ratio=4, norm_layer=norm, **kwargs)
     return model
 
 
-def tinymim_vit_small_patch16(**kwargs):
+def tinymim_vit_small_patch16(norm = "dyt",**kwargs):
     model = TinyMIMViT(
-        patch_size=16, embed_dim=384, depth=12, num_heads=6,drop_path=0.1,last_heads=12,
-        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+        patch_size=16, embed_dim=384, depth=12,tea_embed_dim = 1024, num_heads=6,drop_path=0.1,last_heads=12,
+        mlp_ratio=4, norm_layer=norm, **kwargs)
     return model
 
 
-def tinymim_vit_base_patch16(**kwargs):
+def tinymim_vit_base_patch16(norm = "dyt",last_head = 16,tea_embed_dim = 1024,**kwargs):
     model = TinyMIMViT(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, drop_path=0.1,last_heads=16,
-        mlp_ratio=4, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
+        patch_size=16, embed_dim=768,tea_embed_dim = tea_embed_dim, depth=12, num_heads=12, drop_path=0.1,last_heads=last_head,
+        mlp_ratio=4, norm_layer=norm, **kwargs)
     return model
 
 

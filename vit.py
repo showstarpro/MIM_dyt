@@ -62,8 +62,10 @@ class Attention(nn.Module):
 class Block(nn.Module):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+                 drop_path=0., act_layer=nn.GELU):
         super().__init__()
+        norm_layer = partial(nn.LayerNorm, eps=1e-6)
+
         self.norm1 = norm_layer(dim) # 正则化层
         self.attn = Attention(
             dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
@@ -100,7 +102,7 @@ class DyT(nn.Module):
 
 class Dyt_Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+                 drop_path=0., act_layer=nn.GELU):
         super().__init__()
         # 原始LayerNorm替换为DyT层
         self.dyt1 = DyT(num_features=dim)
