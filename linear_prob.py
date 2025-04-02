@@ -281,6 +281,7 @@ def main(args):
     model = models_tinymim.__dict__[args.model](
         num_classes=args.nb_classes,
         drop_path=args.drop_path,
+        depth=12,
         # 确保参数名与模型定义匹配
         embed_dim=768,  # 根据具体模型设置
         last_heads=16,  # 根据base模型设置（注意：这里与finetune不同）
@@ -324,13 +325,17 @@ def main(args):
     print("effective batch size: %d" % eff_batch_size)
 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu],find_unused_parameters=True)
         model_without_ddp = model.module
 
     # 优化器仅更新 norm_layer 和 head 的参数
-    optimizer = torch.optim.AdamW(list(model.norm_layer.parameters()) +
-                                  list(model.head.parameters()), lr=args.lr)
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.lr)
     loss_scaler = NativeScaler()
+    print("Trainable Parameters:")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(name)
 
     if mixup_fn is not None:
         criterion = SoftTargetCrossEntropy()

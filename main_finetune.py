@@ -39,7 +39,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import timm
 
-assert timm.__version__ == "0.3.2" # version check
+assert timm.__version__ == "0.3.2"  # version check
 from timm.models.layers import trunc_normal_
 from timm.data.mixup import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
@@ -92,6 +92,7 @@ from engine_finetune import train_one_epoch, evaluate
 #
 #     def __len__(self):
 #         return self.num_samples
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
@@ -163,7 +164,7 @@ def get_args_parser():
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
 
     # * Finetuning params
-    parser.add_argument('--finetune', default='output_dir/checkpoint-0.pth',
+    parser.add_argument('--finetune', default='/lpai/MIM_dyt-master/output/models/stu_norm/pre/checkpoint-0.pth',
                         help='finetune from checkpoint')
     parser.add_argument('--global_pool', action='store_true')
     parser.set_defaults(global_pool=True)
@@ -206,7 +207,7 @@ def get_args_parser():
     parser.add_argument('--dist_url', default='env://',
                         help='url used to set up distributed training')
 
-    parser.add_argument('--norm', default='norm', type=str,
+    parser.add_argument('--norm', default='dyt', type=str,
                         help='norm or dyt')
 
     return parser
@@ -229,7 +230,6 @@ def main(args):
 
     dataset_train = build_dataset(is_train=True, args=args)
     dataset_val = build_dataset(is_train=False, args=args)
-
 
     # dataset_train = FakeImageNet()
     # dataset_val = FakeImageNet()
@@ -284,7 +284,7 @@ def main(args):
             mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
-    
+
     # model = models_vit.__dict__[args.model](
     #     num_classes=args.nb_classes,
     #     drop_path_rate=args.drop_path,
@@ -293,14 +293,15 @@ def main(args):
     model = models_tinymim.__dict__[args.model](
         num_classes=args.nb_classes,
         drop_path=args.drop_path,
+        depth=12,
         # 确保参数名与模型定义匹配
         embed_dim=768,  # 根据具体模型设置
         last_heads=16,  # 根据base模型设置
-        norm_layer = args.norm
+        norm_layer=args.norm
     )
     # 因为初始化的时候要根据norm_type来确定是哪个模型，所以直接初始化再传参数进去，根据传进去的norm_type是不行的。
     if args.finetune and not args.eval:
-        checkpoint = torch.load(args.finetune, map_location='cpu',weights_only=False)
+        checkpoint = torch.load(args.finetune, map_location='cpu', weights_only=False)
 
         print("Load pre-trained checkpoint from: %s" % args.finetune)
         # checkpoint_model = checkpoint['model']
@@ -309,9 +310,9 @@ def main(args):
         #     if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
         #         print(f"Removing key {k} from pretrained checkpoint")
         #         del checkpoint_model[k]
-        filtered_state_dict = { # 移除微调没用的几个投影层
+        filtered_state_dict = {  # 移除微调没用的几个投影层
             k: v for k, v in checkpoint['model'].items()
-            if not k.startswith(('dyt_proj', 'teacher_proj', 'clsx_proj','dyt_f_proj','teacher_f_proj','x_proj','t_proj','clst_proj'))
+            if not k.startswith(('dyt_proj', 'teacher_proj', 'clsx_proj', 'dyt_f_proj', 'teacher_f_proj', 'x_proj', 't_proj', 'clst_proj'))
         }
 
         # interpolate position embedding
@@ -339,7 +340,7 @@ def main(args):
     print('number of params (M): %.2f' % (n_parameters / 1.e6))
 
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
-    
+
     if args.lr is None:  # only base_lr is specified
         args.lr = args.blr * eff_batch_size / 256
 
@@ -349,15 +350,15 @@ def main(args):
     print("accumulate grad iterations: %d" % args.accum_iter)
     print("effective batch size: %d" % eff_batch_size)
 
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+    if args.distributed:  # 分布式训练
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     # build optimizer with layer-wise lr decay (lrd)
     param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay,
-        no_weight_decay_list=model_without_ddp.no_weight_decay(),
-        layer_decay=args.layer_decay
-    )
+                                        no_weight_decay_list=model_without_ddp.no_weight_decay(),
+                                        layer_decay=args.layer_decay
+                                        )
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     loss_scaler = NativeScaler()
 
@@ -407,9 +408,9 @@ def main(args):
             log_writer.add_scalar('perf/test_loss', test_stats['loss'], epoch)
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                        **{f'test_{k}': v for k, v in test_stats.items()},
-                        'epoch': epoch,
-                        'n_parameters': n_parameters}
+                     **{f'test_{k}': v for k, v in test_stats.items()},
+                     'epoch': epoch,
+                     'n_parameters': n_parameters}
 
         if args.output_dir and misc.is_main_process():
             if log_writer is not None:

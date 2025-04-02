@@ -231,8 +231,8 @@ def main(args):
     #
     #     def __len__(self):
     #         return self.num_samples
-    #
-    #
+
+
     # dataset_train = FakeImageNet()
     # print(f'Dataset information:\n{dataset_train}')
 
