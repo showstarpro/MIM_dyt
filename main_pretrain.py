@@ -60,7 +60,7 @@ def get_args_parser():
     # Model configuration
     parser.add_argument('--model', default='tinymim_vit_base_patch16', type=str, metavar='MODEL',
                         help='Name of student model architecture to train')
-    parser.add_argument('--norm', default='norm', type=str,
+    parser.add_argument('--norm', default='dyt', type=str,
                         help='norm or dyt')
     parser.add_argument('--input_size', default=224, type=int,
                         help='Input image resolution (square size)')
@@ -112,19 +112,19 @@ def get_args_parser():
                         help='URL used to initialize distributed training')
 
     # Teacher model configuration MIM_dyt-master/MIM_dyt-master/
-    parser.add_argument("--teacher_path", default="mae_pretrain_vit_large.pth",type=str,
+    parser.add_argument("--teacher_path", default="mae_pretrain_vit_base.pth",type=str,
                         help='File path to pre-trained teacher model weights')
-    parser.add_argument("--teacher_model", default = "mae_vit_large",type=str,
+    parser.add_argument("--teacher_model", default = "mae_vit_base",type=str,
                         help='Architecture name of teacher model')
 
     # 做损失的层数
-    parser.add_argument('--intermediate', default=[2,4,6,8,10],nargs='+', type=int,    # teacher层数
+    parser.add_argument('--intermediate', default=[1,2,3,4,5,6, 7,8, 9,10,11,12],nargs='+', type=int,    # teacher层数
                         help='Layer index for teacher feature distillation')
-    parser.add_argument('--layer', default=[1,3,5, 7, 9],nargs='+', type=int,           # student层数
+    parser.add_argument('--layer', default=[1,2,3,4,5,6, 7,8, 9,10,11,12],nargs='+', type=int,           # student层数
                         help='Layer index for student feature distillation')
 
     # 损失的权重
-    parser.add_argument('--loss_weight', default=[0,0,1,1,1],nargs='+', type=int,  # qk，vv，dyt，dyt_f，cls
+    parser.add_argument('--loss_weight', default=[0,0,0,0,1],nargs='+', type=int,  # qk，vv，dyt，dyt_f，cls
                         help='the loss weight with qk vv dyt dyt_f cls')
 
     return parser
@@ -231,8 +231,8 @@ def main(args):
     #
     #     def __len__(self):
     #         return self.num_samples
-
-
+    #
+    #
     # dataset_train = FakeImageNet()
     # print(f'Dataset information:\n{dataset_train}')
 

@@ -121,6 +121,7 @@ def train_one_epoch(model: torch.nn.Module,
         # ==================== 指标记录 ====================
         # metric_logger.update(qkloss=qk_loss.item())
         # metric_logger.update(vvloss=vv_loss.item())
+        metric_logger.update(total_loss=loss.item())
         metric_logger.update(dyt_loss=dyt_loss.item())
         metric_logger.update(dyt_f_loss=dyt_f_loss.item())
         metric_logger.update(cls_loss=cls_loss.item())

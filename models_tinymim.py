@@ -57,17 +57,17 @@ class TinyMIMViT(nn.Module):
         # self.norm_layer = partial(nn.LayerNorm, eps=1e-6)
 
         # 线性层
-        self.dyt_proj = nn.Linear(embed_dim, tea_embed_dim)  # 学生投影：768 → 1024
-        self.teacher_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
+        # self.dyt_proj = nn.Linear(embed_dim, tea_embed_dim)  # 学生投影：768 → 1024
+        # self.teacher_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
-        self.dyt_f_proj = nn.Linear(embed_dim, tea_embed_dim)  # 学生投影：768 → 1024
-        self.teacher_f_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
+        # self.dyt_f_proj = nn.Linear(embed_dim, tea_embed_dim)  # 学生投影：768 → 1024
+        # self.teacher_f_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
-        self.x_proj = nn.Linear(embed_dim, tea_embed_dim)  # 输出投影：768 → 1024
-        self.t_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
+        # self.x_proj = nn.Linear(embed_dim, tea_embed_dim)  # 输出投影：768 → 1024
+        # self.t_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
-        self.clsx_proj = nn.Linear(embed_dim, tea_embed_dim)  # 输出投影：768 → 1024
-        self.clst_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
+        # self.clsx_proj = nn.Linear(embed_dim, tea_embed_dim)  # 输出投影：768 → 1024
+        # self.clst_proj = nn.Linear(tea_embed_dim, tea_embed_dim)
 
         self.layer = layer
 
@@ -132,22 +132,14 @@ class TinyMIMViT(nn.Module):
                 x, _, _, _, _ = blk(x, return_relation=True)
         return x, qk, vv, norm_x, norm_x_f, cls
 
-    def forward_kd_loss(self, pred, teacher_out):
+    def forward_kd_loss(self, pred, teacher_out): # base line里面算qk和vv的用kl，不需要更改
         pred = pred.log()
         loss = nn.KLDivLoss(reduction="none")(pred, teacher_out).sum(-1)
         return loss.mean()
 
-    def forward_kd_softmax_loss(self, pred, teacher_out):
-        # 由于dyt和norm的输出空间不是softmax，而kl散度要求输入是过softmax的（qk和vv最后都有过softmax）
-        student_log_probs = torch.log_softmax(pred, dim=-1)
-        teacher_probs = torch.softmax(teacher_out, dim=-1)
-
-        # 添加数值稳定性保护
-        teacher_probs = teacher_probs.clamp(min=1e-8)  # 防止除零
-
-        # 计算 KL 散度
-        loss = nn.KLDivLoss(reduction="none")(student_log_probs, teacher_probs).sum(-1)
-        return loss.mean()
+    def forward_L2_loss(self, pred, teacher_out):
+        loss = nn.MSELoss()(pred, teacher_out)
+        return loss
 
     def forward(self, imgs, teacher_out=None):  # qk和vv最后有过softmax，但dyt和norm没有，计算kl散度之前要过softmax
         # 由于base和large的注意力投影头数目不一样，所以中间层的qk和vv无法做loss（tinny中把base的最后一层改成和large投影头一样了）
@@ -173,19 +165,16 @@ class TinyMIMViT(nn.Module):
                 # 处理 norm(attn) 和 norm(fnn) 的多层损失
                 # ---------------------
                 # 计算 norm(attn) 的损失
-                s_dyt = self.dyt_proj(dyt_x[i])  # 学生输出投影
-                t_dyt = self.teacher_proj(teacher_out[3][i])  # 教师输出投影
-                dyt_loss += self.forward_kd_softmax_loss(s_dyt, t_dyt)
+                s_dyt = dyt_x[i]  # 学生输出投影
+                dyt_loss += self.forward_L2_loss(s_dyt, teacher_out[3][i])
 
                 # 计算 norm(fnn) 的损失
-                s_dyt_f = self.dyt_f_proj(dyt_x_f[i])
-                t_dyt_f = self.teacher_f_proj(teacher_out[4][i])
-                dyt_f_loss += self.forward_kd_softmax_loss(s_dyt_f, t_dyt_f)
+                s_dyt_f = dyt_x_f[i]
+                dyt_f_loss += self.forward_L2_loss(s_dyt_f, teacher_out[4][i])
 
                 # 计算 cls 的损失
-                s_cls = self.clsx_proj(cls[i])
-                t_cls = self.clst_proj(teacher_out[5][i])
-                cls_loss += self.forward_kd_softmax_loss(s_cls, t_cls)
+                s_cls = cls[i]
+                cls_loss += self.forward_L2_loss(s_cls, teacher_out[5][i])
 
             # 平均损失（按层数）
             num_layers = len(self.layer)

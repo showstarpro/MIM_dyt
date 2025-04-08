@@ -162,9 +162,9 @@ def get_args_parser():
                         help='Probability of switching to cutmix when both mixup and cutmix enabled')
     parser.add_argument('--mixup_mode', type=str, default='batch',
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
-
+    # / lpai / MIM_dyt - master / output / models / stu_norm / pre / checkpoint - 0.pth
     # * Finetuning params
-    parser.add_argument('--finetune', default='/lpai/MIM_dyt-master/output/models/stu_norm/pre/checkpoint-0.pth',
+    parser.add_argument('--finetune', default='output_dir/checkpoint-0.pth',
                         help='finetune from checkpoint')
     parser.add_argument('--global_pool', action='store_true')
     parser.set_defaults(global_pool=True)
@@ -296,7 +296,7 @@ def main(args):
         depth=12,
         # 确保参数名与模型定义匹配
         embed_dim=768,  # 根据具体模型设置
-        last_heads=16,  # 根据base模型设置
+        last_heads=12,  # 根据base模型设置
         norm_layer=args.norm
     )
     # 因为初始化的时候要根据norm_type来确定是哪个模型，所以直接初始化再传参数进去，根据传进去的norm_type是不行的。
@@ -328,7 +328,7 @@ def main(args):
         #     assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
 
         # manually initialize fc layer
-        trunc_normal_(model.head.weight, std=2e-5)
+        trunc_normal_(model.head.weight, std=0.02)
         model.head.bias.data.zero_()
 
     model.to(device)
