@@ -1,6 +1,6 @@
 cd /lpai ;
 
-git clone -b LPK https://github.com/showstarpro/MIM_dyt.git MIM_dyt ;
+git clone -b rjy_2 https://github.com/showstarpro/MIM_dyt.git MIM_dyt ;
 
 cd ./MIM_dyt;
 
@@ -21,7 +21,7 @@ torchrun --nproc_per_node 8 main_pretrain.py \
     --num_workers 16 \
     --intermediate 12 \
     --layer 12 \
-    --loss_weight 0 0 1 1 1 \
+    --loss_weight 0 0 0 0 0 1 \
     --output_dir /lpai/output/models/pre \
     --log_dir /lpai/output/models/pre
 
