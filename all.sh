@@ -1,13 +1,3 @@
-cd /lpai ;
-
-git clone -b rjy_2 https://github.com/showstarpro/MIM_dyt.git MIM_dyt ;
-
-cd ./MIM_dyt;
-
-source /root/anaconda3/etc/profile.d/conda.sh ;
-
-conda activate dytlpk;
-
 torchrun --nproc_per_node 8 main_pretrain.py \
     --batch_size 128 \
     --epochs 100 \
@@ -48,5 +38,3 @@ torchrun --nproc_per_node 8 linear_prob.py \
     --log_dir /lpai/output/models/ln \
     --finetune /lpai/output/models/pre/checkpoint-99.pth \
     --norm dyt
-
-sleep 14d;
