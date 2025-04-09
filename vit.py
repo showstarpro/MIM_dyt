@@ -77,10 +77,12 @@ class Block(nn.Module):
 
     def forward(self, x, return_relation=False):
         norm_x = self.norm1(x)
-        x, qk, vv =self.attn(self.norm1(x), return_relation=True)
-        x = x + self.drop_path(x)
+        attn_out, qk, vv = self.attn(norm_x, return_relation=True)
+        x = x + self.drop_path(attn_out)
+
         norm_x_f = self.norm2(x)
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        mlp_out = self.mlp(norm_x_f)
+        x = x + self.drop_path(mlp_out)
         return x, qk, vv, norm_x, norm_x_f
         # x = x + self.drop_path(self.attn(self.norm1(x)))
         # x = x + self.drop_path(self.mlp(self.norm2(x)))
@@ -118,12 +120,13 @@ class Dyt_Block(nn.Module):
                        act_layer=act_layer, drop=drop)
 
     def forward(self, x, return_relation=False):
-        # 使用DyT代替原始归一化
         dyt_x = self.dyt1(x)
-        x, qk, vv = self.attn(self.dyt1(x), return_relation=True)
-        x = x + self.drop_path(x)
+        attn_out, qk, vv = self.attn(dyt_x, return_relation=True)
+        x = x + self.drop_path(attn_out)
+
         dyt_x_f = self.dyt2(x)
-        x = x + self.drop_path(self.mlp(self.dyt2(x)))
+        mlp_out = self.mlp(dyt_x_f)
+        x = x + self.drop_path(mlp_out)
         return x, qk, vv, dyt_x, dyt_x_f
         # x = x + self.drop_path(self.attn(self.dyt1(x)))
         # x = x + self.drop_path(self.mlp(self.dyt2(x)))

@@ -86,7 +86,7 @@ def train_one_epoch(model: torch.nn.Module,
                 teacher_out = teacher(samples[0].to(device, non_blocking=True))  # 教师视图前向
 
             # 学生模型前向，用的large18/24层和base12/12层做损失
-            qk_loss, vv_loss,dyt_loss,dyt_f_loss, cls_loss = model(
+            qk_loss, vv_loss,dyt_loss,dyt_f_loss, cls_loss, out_loss = model(
                 samples[1].to(device, non_blocking=True),  # 学生视图输入
                 teacher_out  # 教师模型输出作为监督信号
             )
@@ -94,7 +94,7 @@ def train_one_epoch(model: torch.nn.Module,
         # 总损失计算
         # loss = dyt_loss
         loss_weight = args.loss_weight
-        loss = loss_weight[0]*qk_loss + loss_weight[1]*vv_loss + loss_weight[2]*dyt_loss + loss_weight[3]*dyt_f_loss + loss_weight[4]*cls_loss  # 可做加权
+        loss = loss_weight[0]*qk_loss + loss_weight[1]*vv_loss + loss_weight[2]*dyt_loss + loss_weight[3]*dyt_f_loss + loss_weight[4]*cls_loss + loss_weight[5]*out_loss # 可做加权
         loss_value = loss.item()  # 获取标量损失值
 
         # ==================== 损失检查 ====================
@@ -125,7 +125,7 @@ def train_one_epoch(model: torch.nn.Module,
         metric_logger.update(dyt_loss=dyt_loss.item())
         metric_logger.update(dyt_f_loss=dyt_f_loss.item())
         metric_logger.update(cls_loss=cls_loss.item())
-
+        metric_logger.update(out_loss=out_loss.item())
 
         # 学习率记录
         lr = optimizer.param_groups[0]["lr"]  # 获取当前学习率

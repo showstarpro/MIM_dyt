@@ -175,6 +175,9 @@ class TinyMIMViT(nn.Module):
                 # 计算 cls 的损失
                 s_cls = cls[i]
                 cls_loss += self.forward_L2_loss(s_cls, teacher_out[5][i])
+            
+            # 计算最后一层的输出，即197个tokens的损失
+            out_loss = self.forward_L2_loss(x, teacher_out[0])
 
             # 平均损失（按层数）
             num_layers = len(self.layer)
@@ -184,7 +187,7 @@ class TinyMIMViT(nn.Module):
             dyt_f_loss /= num_layers
             cls_loss /= num_layers
 
-            return qk_loss, vv_loss, dyt_loss, dyt_f_loss, cls_loss
+            return qk_loss, vv_loss, dyt_loss, dyt_f_loss, cls_loss, out_loss
 
     def forward_finetune(self, imgs):
         """微调用前向传播"""

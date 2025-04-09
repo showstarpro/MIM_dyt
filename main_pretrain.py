@@ -124,8 +124,8 @@ def get_args_parser():
                         help='Layer index for student feature distillation')
 
     # 损失的权重
-    parser.add_argument('--loss_weight', default=[0,0,0,0,1],nargs='+', type=int,  # qk，vv，dyt，dyt_f，cls
-                        help='the loss weight with qk vv dyt dyt_f cls')
+    parser.add_argument('--loss_weight', default=[0,0,0,0,0,1],nargs='+', type=int,  # qk，vv，dyt，dyt_f，cls，out
+                        help='the loss weight with qk vv dyt dyt_f cls out')
 
     return parser
 
