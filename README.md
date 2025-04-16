@@ -1,2 +1,2 @@
-# 更新
-cls改成197，添加了时间
+# 使用
+--norm_type [dyt|norm]\_[dyt|norm]\_[dyt|norm]\_[dyt|norm]

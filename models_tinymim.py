@@ -49,33 +49,30 @@ class TinyMIMViT(nn.Module):
                                                 qkv_bias=True, qk_scale=None) for _ in range(depth - 1)
                                         ] + [Block(embed_dim, self.last_heads, mlp_ratio,
                                                 qkv_bias=True, qk_scale=None)])
-        elif self.norm_type == "fusion":
+        else:
             # 为fusion模式选择最终的norm层，这里使用DyT
             self.norm_layer = DyT(embed_dim, alpha_init_value=0.5)
             
-            # 定义需要使用DyT的层（基于1开始的索引）
-            dyt_layers = [4, 8, 12]
+            layers = norm_layer.split('_')
+            
+            block_comb = []
+            
+            for layer in layers:
+                if layer == "dyt":
+                    block_comb.append(Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path,
+                                       qkv_bias=True, qk_scale=None, norm_layer=DyT))
+                elif layer == "norm":
+                    block_comb.append(Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path,
+                                       qkv_bias=True, qk_scale=None))
+                else:
+                    raise ValueError(f"Unsupported norm layer: {layer}")
             
             # 创建模块列表
             blocks = []
-            for i in range(1, depth + 1):
-                # 确定当前层的头数
-                current_heads = self.last_heads if i == depth else num_heads
-                
-                # 根据层索引选择norm类型
-                if i in dyt_layers:
-                    # DyT层
-                    blocks.append(Block(embed_dim, current_heads, mlp_ratio, drop_path=drop_path,
-                                       qkv_bias=True, qk_scale=None, norm_layer=DyT))
-                else:
-                    # LayerNorm层
-                    blocks.append(Block(embed_dim, current_heads, mlp_ratio, drop_path=drop_path,
-                                       qkv_bias=True, qk_scale=None))
+            for i in range(3):
+                blocks.extend(block_comb)
             
             self.blocks = nn.ModuleList(blocks)
-            
-        else:
-            raise NotImplementedError
 
         # --------------------------------------------------------------------------
 
