@@ -11,6 +11,7 @@
 import math
 import sys
 from typing import Iterable
+import time
 
 import torch
 
@@ -141,6 +142,7 @@ def train_one_epoch(model: torch.nn.Module,
             log_writer.add_scalar('lr', lr, epoch_1000x)  # 记录学习率
 
     # ==================== epoch结束处理 ====================
+
     metric_logger.synchronize_between_processes()  # 多卡训练同步指标
     print("Averaged stats:", metric_logger)  # 打印平均指标
 

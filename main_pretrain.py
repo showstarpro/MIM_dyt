@@ -30,7 +30,7 @@ import torchvision.datasets as datasets
 # Image model libraries
 import timm
 
-assert timm.__version__ == "0.3.2"  # Verify compatible timm version
+#assert timm.__version__ == "0.3.2"  # Verify compatible timm version
 import timm.optim.optim_factory as optim_factory
 
 # Custom utilities
@@ -381,6 +381,10 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f'Total training time: {total_time_str}')
+    
+    if args.output_dir and misc.is_main_process():
+        with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
+            f.write(f"Training time: {total_time_str}\n")
 
 
 if __name__ == '__main__':
