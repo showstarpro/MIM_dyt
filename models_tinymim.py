@@ -153,7 +153,8 @@ class TinyMIMViT(nn.Module):
                 vv.append(vv_temp)
                 norm_x.append(norm_temp)
                 norm_x_f.append(norm_temp_f)
-                cls.append(x[:, 0, :])
+                # cls.append(x[:, 0, :])
+                cls.append(x)
             else:
                 x, _, _, _, _ = blk(x, return_relation=True)
         return x, qk, vv, norm_x, norm_x_f, cls
