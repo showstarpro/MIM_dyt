@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-
+#
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 # --------------------------------------------------------
@@ -11,6 +11,7 @@
 
 import math
 import sys
+import time
 from typing import Iterable, Optional
 
 import torch
@@ -40,9 +41,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
+    # ----------------- 记录训练开始时间 -----------------
+    train_start_time = time.time()
+
     for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
-        # we use a per iteration (instead of per epoch) lr scheduler
+        # 每个 iteration 调整学习率
         if data_iter_step % accum_iter == 0:
             lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
@@ -82,17 +86,22 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         loss_value_reduce = misc.all_reduce_mean(loss_value)
         if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
-            """ We use epoch_1000x as the x-axis in tensorboard.
-            This calibrates different curves when batch size changes.
-            """
             epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
             log_writer.add_scalar('loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', max_lr, epoch_1000x)
 
-    # gather the stats from all processes
+    # ----------------- 记录训练结束时间，计算耗时 -----------------
+    train_time = time.time() - train_start_time
+    print(f"Epoch {epoch} training finished, time: {train_time:.2f} seconds")
+    if log_writer is not None:
+        log_writer.add_scalar("train_epoch_time", train_time, epoch)
+
+    # 同步所有进程统计数据
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    metrics = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    metrics["train_epoch_time"] = train_time
+    return metrics
 
 
 @torch.no_grad()
@@ -102,8 +111,11 @@ def evaluate(data_loader, model, device):
     metric_logger = misc.MetricLogger(delimiter="  ")
     header = 'Test:'
 
-    # switch to evaluation mode
+    # 切换到 eval 模式
     model.eval()
+
+    # ----------------- 记录测试开始时间 -----------------
+    test_start_time = time.time()
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
@@ -111,7 +123,6 @@ def evaluate(data_loader, model, device):
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
 
-        # compute output
         with torch.cuda.amp.autocast():
             output = model(images)
             loss = criterion(output, target)
@@ -122,9 +133,14 @@ def evaluate(data_loader, model, device):
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
-    # gather the stats from all processes
+
+    # ----------------- 记录测试结束时间，计算耗时 -----------------
+    test_time = time.time() - test_start_time
+    print(f"Evaluation finished, time: {test_time:.2f} seconds")
+
     metric_logger.synchronize_between_processes()
     print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
-
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    result = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    result["eval_time"] = test_time
+    return result
