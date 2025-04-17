@@ -58,6 +58,9 @@ def train_one_epoch(model: torch.nn.Module,
     if log_writer is not None:
         print(f'log_dir: {log_writer.log_dir}')
 
+    # 记录 epoch 开始时间
+    epoch_start_time = time.time()
+
     # 开始迭代数据
     for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -120,13 +123,19 @@ def train_one_epoch(model: torch.nn.Module,
         torch.cuda.synchronize()  # 确保CUDA操作完成
 
         # ==================== 指标记录 ====================
-        # metric_logger.update(qkloss=qk_loss.item())
-        # metric_logger.update(vvloss=vv_loss.item())
         metric_logger.update(total_loss=loss.item())
-        metric_logger.update(dyt_loss=dyt_loss.item())
-        metric_logger.update(dyt_f_loss=dyt_f_loss.item())
-        metric_logger.update(cls_loss=cls_loss.item())
-        metric_logger.update(out_loss=out_loss.item())
+        if loss_weight[0] != 0:
+            metric_logger.update(qkloss=qk_loss.item())
+        if loss_weight[1] != 0:
+            metric_logger.update(vvloss=vv_loss.item())
+        if loss_weight[2] != 0:
+            metric_logger.update(dyt_loss=dyt_loss.item())
+        if loss_weight[3] != 0:
+            metric_logger.update(dyt_f_loss=dyt_f_loss.item())
+        if loss_weight[4] != 0:
+            metric_logger.update(cls_loss=cls_loss.item())
+        if loss_weight[5] != 0:
+            metric_logger.update(out_loss=out_loss.item())
 
         # 学习率记录
         lr = optimizer.param_groups[0]["lr"]  # 获取当前学习率
@@ -140,11 +149,32 @@ def train_one_epoch(model: torch.nn.Module,
             epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)  # 跨epoch的迭代计数
             log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)  # 记录损失
             log_writer.add_scalar('lr', lr, epoch_1000x)  # 记录学习率
+            if loss_weight[0] != 0:
+                log_writer.add_scalar('qk_loss', qk_loss.item(), epoch_1000x)
+            if loss_weight[1] != 0:
+                log_writer.add_scalar('vv_loss', vv_loss.item(), epoch_1000x)
+            if loss_weight[2] != 0:
+                log_writer.add_scalar('dyt_loss', dyt_loss.item(), epoch_1000x)
+            if loss_weight[3] != 0:
+                log_writer.add_scalar('dyt_f_loss', dyt_f_loss.item(), epoch_1000x)
+            if loss_weight[4] != 0:
+                log_writer.add_scalar('cls_loss', cls_loss.item(), epoch_1000x)
+            if loss_weight[5] != 0:
+                log_writer.add_scalar('out_loss', out_loss.item(), epoch_1000x)            
 
     # ==================== epoch结束处理 ====================
-
     metric_logger.synchronize_between_processes()  # 多卡训练同步指标
+    averaged_stats = metric_logger.meters
+
+    # 计算并记录本 epoch 耗时
+    epoch_time = time.time() - epoch_start_time
+    if log_writer is not None:
+        log_writer.add_scalar("epoch_time", epoch_time, epoch)
     print("Averaged stats:", metric_logger)  # 打印平均指标
 
+
     # 返回指标字典（用于后续分析）
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    averaged_stats["epoch_time"] = epoch_time
+    return {k: meter.global_avg if hasattr(meter, "global_avg") else meter for k, meter in averaged_stats.items()}
+    
+    # return {k: meter.global_avg for k, meter in metric_logger.meters.items()}

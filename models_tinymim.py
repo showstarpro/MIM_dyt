@@ -20,7 +20,7 @@ class TinyMIMViT(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, drop_path=0.1,
                  embed_dim=1024, tea_embed_dim=1024, depth=24, num_heads=16, last_heads=12,
                  mlp_ratio=4., norm_layer="dyt", layer=None, num_classes=1000,
-                 finetune=False):
+                 finetune=False, loss="l2", batch_size=64):
         super().__init__()
 
         # --------------------------------------------------------------------------
@@ -73,6 +73,12 @@ class TinyMIMViT(nn.Module):
 
         # finetune用的分类头
         self.head = nn.Linear(embed_dim, num_classes)
+
+        # 损失函数使用l2或cosine
+        self.loss = loss
+
+        # batch_size
+        self.batch_size = batch_size
 
     def initialize_weights(self):
         # initialization
@@ -130,7 +136,7 @@ class TinyMIMViT(nn.Module):
                 cls.append(x[:, 0, :])
             else:
                 x, _, _, _, _ = blk(x, return_relation=True)
-        return x, qk, vv, norm_x, norm_x_f, cls
+        return x, qk, vv, norm_x, norm_x_f, cls # norm_x, norm_x_f: B * T * C ; cls: B * T
 
     def forward_kd_loss(self, pred, teacher_out): # base line里面算qk和vv的用kl，不需要更改
         pred = pred.log()
@@ -140,6 +146,18 @@ class TinyMIMViT(nn.Module):
     def forward_L2_loss(self, pred, teacher_out):
         loss = nn.MSELoss()(pred, teacher_out)
         return loss
+    
+    def forward_cosine_loss(self, pred, teacher_out, cls=False):        
+        loss = 0.0
+        if not cls:
+            loss_flag = torch.ones([self.patch_embed.num_patches + 1], device = pred.device) # size为(197,)
+            for i in range(self.batch_size):
+                loss += nn.CosineEmbeddingLoss(reduction='mean')(pred[i,:,:], teacher_out[i,:,:], loss_flag)   
+            loss /= self.batch_size
+        else:
+            loss_flag = torch.ones([self.batch_size], device = pred.device) # size为(batch_size,)
+            loss += nn.CosineEmbeddingLoss(reduction='mean')(pred, teacher_out, loss_flag) 
+        return loss
 
     def forward(self, imgs, teacher_out=None):  # qk和vv最后有过softmax，但dyt和norm没有，计算kl散度之前要过softmax
         # 由于base和large的注意力投影头数目不一样，所以中间层的qk和vv无法做loss（tinny中把base的最后一层改成和large投影头一样了）
@@ -148,6 +166,12 @@ class TinyMIMViT(nn.Module):
         if teacher_out is None:  # 不输入教师的输出就默认微调
             return self.forward_finetune(imgs)  # 微调模式
         else:
+            # 选择loss为L2或cosine
+            if self.loss == "l2":
+                forward_loss = self.forward_L2_loss
+            elif self.loss == "cosine":
+                forward_loss = self.forward_cosine_loss
+
             x, qk, vv, dyt_x, dyt_x_f, cls = self.forward_encoder(imgs)
 
             # 初始化各损失项
@@ -166,18 +190,18 @@ class TinyMIMViT(nn.Module):
                 # ---------------------
                 # 计算 norm(attn) 的损失
                 s_dyt = dyt_x[i]  # 学生输出投影
-                dyt_loss += self.forward_L2_loss(s_dyt, teacher_out[3][i])
+                dyt_loss += forward_loss(s_dyt, teacher_out[3][i])
 
                 # 计算 norm(fnn) 的损失
                 s_dyt_f = dyt_x_f[i]
-                dyt_f_loss += self.forward_L2_loss(s_dyt_f, teacher_out[4][i])
+                dyt_f_loss += forward_loss(s_dyt_f, teacher_out[4][i])
 
                 # 计算 cls 的损失
                 s_cls = cls[i]
-                cls_loss += self.forward_L2_loss(s_cls, teacher_out[5][i])
+                cls_loss += forward_loss(s_cls, teacher_out[5][i], cls = True)
             
             # 计算最后一层的输出，即197个tokens的损失
-            out_loss = self.forward_L2_loss(x, teacher_out[0])
+            out_loss = forward_loss(x, teacher_out[0])
 
             # 平均损失（按层数）
             num_layers = len(self.layer)
@@ -185,14 +209,14 @@ class TinyMIMViT(nn.Module):
             # vv_loss /= num_layers
             dyt_loss /= num_layers
             dyt_f_loss /= num_layers
-            cls_loss /= num_layers
+            cls_loss /= num_layers              
 
             return qk_loss, vv_loss, dyt_loss, dyt_f_loss, cls_loss, out_loss
 
     def forward_finetune(self, imgs):
         """微调用前向传播"""
         x, _, _, _, _, _ = self.forward_encoder(imgs)  # 仅用分类输出
-        x = self.norm_layer(x[:, 0])  # 取分类令牌
+        x = self.norm_layer(x[:, 0])  # 取分类令牌, 并补充norm层
         return self.head(x)  # 输出logits
 
     def no_weight_decay(self):

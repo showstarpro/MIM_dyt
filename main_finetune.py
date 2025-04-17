@@ -382,7 +382,6 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
 
     # 记录train,test总时间
-    start_time = time.time()
     total_train_time = total_test_time = 0.0
 
     max_accuracy = 0.0
@@ -390,8 +389,6 @@ def main(args):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
         
-        # 记录train开始时间
-        start_train_time = time.time()
         train_stats = train_one_epoch(
             model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
@@ -401,20 +398,17 @@ def main(args):
         )
 
         # 计算train总时间
-        total_train_time += time.time() - start_train_time
+        total_train_time += train_stats["train_epoch_time"]
 
         if args.output_dir and (epoch % 20 == 0 or epoch + 1 == args.epochs):
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
             
-        # 记录test开始时间
-        start_test_time = time.time()
-
         test_stats = evaluate(data_loader_val, model, device)
 
         # 计算test总时间
-        total_test_time += time.time() - start_test_time
+        total_test_time += test_stats["eval_time"]
 
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         max_accuracy = max(max_accuracy, test_stats["acc1"])
@@ -436,16 +430,16 @@ def main(args):
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
-    total_time = time.time() - start_time
-    total_str = str(datetime.timedelta(seconds=int(total_time)))
     total_train_str = str(datetime.timedelta(seconds=int(total_train_time)))
     total_test_str = str(datetime.timedelta(seconds=int(total_test_time)))
+    total_time = total_train_time + total_test_time
+    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    print('Total time {}'.format(total_time_str))
 
     if args.output_dir and misc.is_main_process():
         with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
             f.write(f"Training time: {total_train_str}\n")
             f.write(f"Testing time: {total_test_str}\n")
-            f.write(f"Total time: {total_str}\n")
 
 if __name__ == '__main__':
     args = get_args_parser()

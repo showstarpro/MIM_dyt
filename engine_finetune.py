@@ -12,6 +12,7 @@
 import math
 import sys
 from typing import Iterable, Optional
+import time
 
 import torch
 
@@ -39,6 +40,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
+
+    # ----------------- 记录训练开始时间 -----------------
+    train_start_time = time.time()
 
     for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
 
@@ -89,11 +93,17 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             log_writer.add_scalar('loss', loss_value_reduce, epoch_1000x)
             log_writer.add_scalar('lr', max_lr, epoch_1000x)
 
+    # ----------------- 记录训练结束时间，计算耗时 -----------------
+    train_time = time.time() - train_start_time
+    if log_writer is not None:
+        log_writer.add_scalar("train_epoch_time", train_time, epoch)
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-
+    metrics = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    metrics["train_epoch_time"] = train_time
+    return metrics
 
 @torch.no_grad()
 def evaluate(data_loader, model, device):
@@ -104,6 +114,9 @@ def evaluate(data_loader, model, device):
 
     # switch to evaluation mode
     model.eval()
+
+    # ----------------- 记录测试开始时间 -----------------
+    test_start_time = time.time()
 
     for batch in metric_logger.log_every(data_loader, 10, header):
         images = batch[0]
@@ -122,9 +135,15 @@ def evaluate(data_loader, model, device):
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+
+    # ----------------- 记录测试结束时间，计算耗时 -----------------
+    test_time = time.time() - test_start_time
+
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
-
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    result = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    result["eval_time"] = test_time
+    return result

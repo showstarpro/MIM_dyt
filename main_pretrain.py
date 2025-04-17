@@ -126,6 +126,10 @@ def get_args_parser():
     # 损失的权重
     parser.add_argument('--loss_weight', default=[0,0,0,0,0,1],nargs='+', type=int,  # qk，vv，dyt，dyt_f，cls，out
                         help='the loss weight with qk vv dyt dyt_f cls out')
+    
+    # 损失函数的类型
+    parser.add_argument('--loss', default="l2", type=str,
+                        help='choose L2 loss or cosine loss')
 
     return parser
 
@@ -269,7 +273,7 @@ def main(args):
 
     # Model initialization --------------------------------------------------------
     # Student model instantiation
-    model = models_tinymim.__dict__[args.model](norm = args.norm,
+    model = models_tinymim.__dict__[args.model](norm = args.norm, batch_size = args.batch_size, loss = args.loss,
                                                 last_head = 16 if args.teacher_model =="mae_vit_large" else 12,
                                                 tea_embed_dim = 1024 if args.teacher_model =="mae_vit_large" else 768,
                                                 )  # Dynamic model loading
@@ -338,7 +342,9 @@ def main(args):
 
     # Training loop ---------------------------------------------------------------
     print(f"Starting training for {args.epochs} epochs")
-    start_time = time.time()
+    total_time = 0.0
+
+    
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
@@ -356,7 +362,7 @@ def main(args):
             log_writer=log_writer,
             args=args
         )
-
+ 
         # Save checkpoint periodically
         if args.output_dir and (epoch % 20 == 0 or epoch + 1 == args.epochs):
             misc.save_model(
@@ -373,12 +379,17 @@ def main(args):
             **{f'train_{k}': v for k, v in train_stats.items()},
             'epoch': epoch,
         }
+
+        # 计算训练时间
+        total_time += train_stats["epoch_time"]
+
         if args.output_dir and misc.is_main_process():
             with open(Path(args.output_dir) / "log.txt", "a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
     # Training duration statistics
-    total_time = time.time() - start_time
+    # total_time = time.time() - start_time
+
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f'Total training time: {total_time_str}')
     

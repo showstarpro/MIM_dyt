@@ -1,11 +1,11 @@
 pretrain本地测试：
 
-python main_pretrain.py --batch_size 4 --epochs 20 --model tinymim_vit_base_patch16 --norm dyt --teacher_path ./pretrain/mae_pretrain_vit_base.pth --teacher_model mae_vit_base --data_path ./data/mini_imagenet_4class16img --num_workers 16 --lr 5e-4 --weight_decay 0.05 --intermediate 12 --layer 12 --loss_weight 0 0 0 0 0 1 --output_dir ./output/models/pre --log_dir ./output/models/pre
+python main_pretrain.py --batch_size 4 --epochs 2 --model tinymim_vit_base_patch16 --norm dyt --loss cosine --teacher_path ./pretrain/mae_pretrain_vit_base.pth --teacher_model mae_vit_base --data_path ./data/mini_imagenet_4class16img --num_workers 16 --lr 5e-4 --weight_decay 0.05 --intermediate 12 --layer 12 --loss_weight 0 0 0 0 0 1 --output_dir ./output/models/pre --log_dir ./output/models/pre
 
 finetune本地测试：
 
-python main_finetune.py  --batch_size 4 --epochs 2 --norm dyt --data_path ./data/mini_imagenet_4class16img --lr 5e-4 --weight_decay 0.05 --num_workers 16 --output_dir ./output/models/fn --log_dir ./output/models/fn --finetune ./output/models/pre/checkpoint-19.pth 
+python main_finetune.py  --batch_size 4 --epochs 2 --norm dyt --data_path ./data/mini_imagenet_4class16img --lr 5e-4 --weight_decay 0.05 --num_workers 16 --output_dir ./output/models/fn --log_dir ./output/models/fn --finetune ./output/models/pre/checkpoint-1.pth 
 
 linear_probe本地测试：
 
-python linear_prob.py  --batch_size 4 --epochs 2 --norm dyt --data_path ./data/mini_imagenet_4class16img --lr 5e-4 --weight_decay 0.05 --num_workers 16 --output_dir ./output/models/ln --log_dir ./output/models/ln --finetune ./output/models/pre/checkpoint-19.pth 
+python linear_prob.py  --batch_size 4 --epochs 2 --norm dyt --data_path ./data/mini_imagenet_4class16img --lr 5e-4 --weight_decay 0.05 --num_workers 16 --output_dir ./output/models/ln --log_dir ./output/models/ln --finetune ./output/models/pre/checkpoint-1.pth 
