@@ -57,15 +57,15 @@ class TinyMIMViT(nn.Module):
             
             block_comb = []
             
-            for layer in layers:
-                if layer == "dyt":
+            for block in layers:
+                if block == "dyt":
                     block_comb.append(Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path,
                                        qkv_bias=True, qk_scale=None, norm_layer=DyT))
-                elif layer == "norm":
+                elif block == "norm":
                     block_comb.append(Block(embed_dim, num_heads, mlp_ratio, drop_path=drop_path,
                                        qkv_bias=True, qk_scale=None))
                 else:
-                    raise ValueError(f"Unsupported norm layer: {layer}")
+                    raise ValueError(f"Unsupported norm layer: {block}")
             
             # 创建模块列表
             blocks = []
