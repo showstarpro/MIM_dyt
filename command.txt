@@ -1,1 +1,0 @@
-python main_pretrain.py --batch_size 2 --model tinymim_vit_base_patch16 --epochs 2 --warmup_epochs 1 --blr 1.5e-4 --weight_decay 0.05 --teacher_path ./Pretrain/mae_pretrain_vit_large.pth --teacher_model mae_vit_large --data_path ./data/mini_imagenet_1class10img --device cpu --dynamic_tanh false --distill_layer all --distill_dyt all
