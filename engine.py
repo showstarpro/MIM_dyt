@@ -7,6 +7,7 @@
 
 
 import math
+import time
 from typing import Iterable, Optional
 import torch
 from timm.data import Mixup
@@ -28,8 +29,15 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     print_freq = 10
 
     optimizer.zero_grad()
+    
+    # 添加时间记录
+    epoch_start_time = time.time()
+    total_samples = 0
 
     for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+        # total_samples累加，计算throughput
+        total_samples += samples.shape[0]
+        
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
             continue
@@ -106,6 +114,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if use_amp:
             metric_logger.update(grad_norm=grad_norm)
 
+        # loss和lr记录tensorboard
         if log_writer is not None:
             log_writer.update(loss=loss_value, head="loss")
             log_writer.update(class_acc=class_acc, head="loss")
@@ -127,12 +136,35 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             if use_amp:
                 wandb_logger._wandb.log({'Rank-0 Batch Wise/train_grad_norm': grad_norm}, commit=False)
             wandb_logger._wandb.log({'Rank-0 Batch Wise/global_train_step': it})
-            
+
+    # 计算训练时间和吞吐率
+    epoch_time = time.time() - epoch_start_time
+    samples_per_second = total_samples / epoch_time if epoch_time > 0 else 0
+    
+    # 时间和吞吐率记录tensorboard
+    if log_writer is not None:
+        log_writer.update(epoch_time=epoch_time, head="time")
+        log_writer.update(throughput=samples_per_second, head="time")
+
+    if wandb_logger:
+        wandb_logger._wandb.log({
+            'Rank-0 Epoch Wise/epoch_time': epoch_time,
+            'Rank-0 Epoch Wise/throughput': samples_per_second
+        })
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    print(f"Epoch time: {epoch_time:.2f}s, Throughput: {samples_per_second:.2f} samples/s")
+    
+    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    # log.txt中增加训练时间和吞吐率
+    stats.update({
+        'epoch_time': epoch_time,
+        'throughput': samples_per_second
+    })
+    
+    return stats
 
 @torch.no_grad()
 def evaluate(data_loader, model, device, use_amp=False):
@@ -141,6 +173,9 @@ def evaluate(data_loader, model, device, use_amp=False):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
+    # Add test time tracking
+    test_start_time = time.time()
+    
     # switch to evaluation mode
     model.eval()
     for batch in metric_logger.log_every(data_loader, 10, header):
@@ -170,4 +205,9 @@ def evaluate(data_loader, model, device, use_amp=False):
     print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
 
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    test_epoch_time = time.time() - test_start_time
+    print(f"Test epoch time: {test_epoch_time:.2f}s")
+    
+    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    stats['epoch_time'] = test_epoch_time
+    return stats

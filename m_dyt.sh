@@ -1,0 +1,12 @@
+torchrun --nproc_per_node=8 main.py \
+    --model vit_base_patch16_224 \
+    --drop_path 0.1 \
+    --batch_size 64 \
+    --lr 4e-3 \
+    --update_freq 1 \
+    --model_ema true \
+    --model_ema_eval true \
+    --data_path /lpai/dataset/imagenet-1k/0-1-0 \
+    --output_dir /lpai/output/models/pre \
+    --log_dir /lpai/output/models/pre \
+    --modified_dyt true

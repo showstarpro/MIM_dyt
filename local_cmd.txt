@@ -1,1 +1,0 @@
-python main.py --model vit_base_patch16_224 --drop_path 0.1 --warmup_epochs 1 --epochs 2 --batch_size 4 --lr 4e-3 --update_freq 1 --model_ema true --model_ema_eval true --data_path ./data/mini_imagenet_4class16img --nb_classes 4 --output_dir ./output/models --modified_dyt true

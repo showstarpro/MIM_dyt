@@ -416,6 +416,9 @@ def main(args):
 
     print("Start training for %d epochs" % args.epochs)
     start_time = time.time()
+    total_train_time = 0
+    total_test_time = 0
+    
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -431,13 +434,11 @@ def main(args):
             num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq,
             use_amp=args.use_amp
         )
-        if args.output_dir and args.save_ckpt:
-            if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
-                utils.save_model(
-                    args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                    loss_scaler=loss_scaler, epoch=epoch, model_ema=model_ema)
+        total_train_time += train_stats['epoch_time']
+        
         if data_loader_val is not None:
             test_stats = evaluate(data_loader_val, model, device, use_amp=args.use_amp)
+            total_test_time += test_stats['epoch_time']
             print(f"Accuracy of the model on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
             if max_accuracy < test_stats["acc1"]:
                 max_accuracy = test_stats["acc1"]
@@ -451,30 +452,19 @@ def main(args):
                 log_writer.update(test_acc1=test_stats['acc1'], head="perf", step=epoch)
                 log_writer.update(test_acc5=test_stats['acc5'], head="perf", step=epoch)
                 log_writer.update(test_loss=test_stats['loss'], head="perf", step=epoch)
+                log_writer.update(test_epoch_time=test_stats['epoch_time'], head="time", step=epoch)  
+                # 添加时间和吞吐率到tensorboard log_writer
+                if 'epoch_time' in train_stats:
+                    log_writer.update(epoch_time=train_stats['epoch_time'], head="time", step=epoch)
+                if 'throughput' in train_stats:
+                    log_writer.update(throughput=train_stats['throughput'], head="time", step=epoch)
 
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()},
-                         'epoch': epoch,
-                         'n_parameters': n_parameters}
-
-            # repeat testing routines for EMA, if ema eval is turned on
-            if args.model_ema and args.model_ema_eval:
-                test_stats_ema = evaluate(data_loader_val, model_ema.ema, device, use_amp=args.use_amp)
-                print(f"Accuracy of the model EMA on {len(dataset_val)} test images: {test_stats_ema['acc1']:.1f}%")
-                if max_accuracy_ema < test_stats_ema["acc1"]:
-                    max_accuracy_ema = test_stats_ema["acc1"]
-                    if args.output_dir and args.save_ckpt:
-                        utils.save_model(
-                            args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
-                            loss_scaler=loss_scaler, epoch="best-ema", model_ema=model_ema)
-                    print(f'Max EMA accuracy: {max_accuracy_ema:.2f}%')
-                if log_writer is not None:
-                    log_writer.update(test_acc1_ema=test_stats_ema['acc1'], head="perf", step=epoch)
-                log_stats.update({**{f'test_{k}_ema': v for k, v in test_stats_ema.items()}})
+                         'epoch': epoch}
         else:
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                         'epoch': epoch,
-                         'n_parameters': n_parameters}
+                         'epoch': epoch}
 
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:
@@ -485,13 +475,36 @@ def main(args):
         if wandb_logger:
             wandb_logger.log_epoch_metrics(log_stats)
 
+        if args.output_dir and args.save_ckpt:
+            if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
+                utils.save_model(
+                    args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                    loss_scaler=loss_scaler, epoch=epoch, model_ema=model_ema)
+
+
     if wandb_logger and args.wandb_ckpt and args.save_ckpt and args.output_dir:
         wandb_logger.log_checkpoints()
-
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
+    print(f'Total train time: {total_train_time:.2f}s')
+    print(f'Total test time: {total_test_time:.2f}s')
+    
+    # log最后记录总时间
+    if args.output_dir and utils.is_main_process():
+        with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
+            final_stats = {
+                "total_train_time": total_train_time,
+                "total_test_time": total_test_time,
+                "total_time": total_time
+            }
+            f.write(json.dumps(final_stats) + "\n")
+
+    # 将总参数写入日志
+    if args.output_dir and utils.is_main_process():
+        with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
+            f.write(json.dumps({"n_parameters": n_parameters}) + "\n")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('ConvNeXt training and evaluation script', parents=[get_args_parser()])
