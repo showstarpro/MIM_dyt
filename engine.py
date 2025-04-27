@@ -36,7 +36,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         # total_samples累加，计算throughput
-        total_samples += samples.shape[0]
+        total_samples += samples.shape[0] # samples的第一个参数为batch size
         
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
@@ -173,7 +173,7 @@ def evaluate(data_loader, model, device, use_amp=False):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
-    # Add test time tracking
+    # 增加时间记录
     test_start_time = time.time()
     
     # switch to evaluation mode

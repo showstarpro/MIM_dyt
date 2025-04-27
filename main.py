@@ -462,6 +462,24 @@ def main(args):
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()},
                          'epoch': epoch}
+            
+            # repeat testing routines for EMA, if ema eval is turned on
+            if args.model_ema and args.model_ema_eval:
+                test_stats_ema = evaluate(data_loader_val, model_ema.ema, device, use_amp=args.use_amp)
+                print(f"Accuracy of the model EMA on {len(dataset_val)} test images: {test_stats_ema['acc1']:.1f}%")
+                if max_accuracy_ema < test_stats_ema["acc1"]:
+                    max_accuracy_ema = test_stats_ema["acc1"]
+                    if args.output_dir and args.save_ckpt:
+                        utils.save_model(
+                            args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
+                            loss_scaler=loss_scaler, epoch="best-ema", model_ema=model_ema)
+                    print(f'Max EMA accuracy: {max_accuracy_ema:.2f}%')
+                # test_acc1_ema记录tensorboard    
+                if log_writer is not None:
+                    log_writer.update(test_acc1_ema=test_stats_ema['acc1'], head="perf", step=epoch)
+                # test_ema记录log.txt
+                log_stats.update({**{f'test_{k}_ema': v for k, v in test_stats_ema.items()}})
+ 
         else:
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          'epoch': epoch}
@@ -475,6 +493,7 @@ def main(args):
         if wandb_logger:
             wandb_logger.log_epoch_metrics(log_stats)
 
+        # 增加了保存模型
         if args.output_dir and args.save_ckpt:
             if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
                 utils.save_model(
