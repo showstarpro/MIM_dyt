@@ -34,7 +34,8 @@ import utils
 
 from dynamic_tanh import convert_ln_to_dyt
 from dynamic_tanh import convert_ln_to_m_dyt
-
+from dynamic_tanh import convert_ln_to_m_dyt_plus
+from dynamic_tanh import convert_ln_to_m_dyt_mean
 
 def str2bool(v):
     """
@@ -203,8 +204,11 @@ def get_args_parser():
     parser.add_argument('--wandb_ckpt', type=str2bool, default=False,
                         help="Save model checkpoints as W&B Artifacts.")
     
+    # 是否使用 DyT 及其改版
     parser.add_argument('--dynamic_tanh', type=str2bool, default=False)
     parser.add_argument('--modified_dyt', type=str2bool, default=False)
+    parser.add_argument('--modified_dyt_plus', type=str2bool, default=False)
+    parser.add_argument('--modified_dyt_mean', type=str2bool, default=False)
 
     return parser
 
@@ -302,11 +306,18 @@ def main(args):
     else:
         raise ValueError(f"Unrecognized model: {args.model}")
 
+    # 根据超参判断是否更换DyT
     if args.dynamic_tanh:
         model = convert_ln_to_dyt(model)
 
     if args.modified_dyt:
         model = convert_ln_to_m_dyt(model)  
+
+    if args.modified_dyt_plus:
+        model = convert_ln_to_m_dyt_plus(model) 
+
+    if args.modified_dyt_mean:
+        model = convert_ln_to_m_dyt_mean(model) 
 
     if args.finetune:
         if args.finetune.startswith('https'):
