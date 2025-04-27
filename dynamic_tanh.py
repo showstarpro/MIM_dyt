@@ -124,7 +124,7 @@ def convert_ln_to_m_dyt_mean(module):
 def convert_ln_to_m_dyt_plus(module):
     module_output = module
     if isinstance(module, nn.LayerNorm):
-        module_output = M_DynamicTanh_mean(module.normalized_shape, not isinstance(module, LayerNorm2d))
+        module_output = M_DynamicTanh_plus(module.normalized_shape, not isinstance(module, LayerNorm2d))
     for name, child in module.named_children():
         module_output.add_module(name, convert_ln_to_m_dyt_plus(child))
     del module
