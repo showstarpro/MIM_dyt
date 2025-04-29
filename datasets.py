@@ -32,7 +32,24 @@ def build_dataset(is_train, args):
         nb_classes = 100
     elif args.data_set == 'IMNET':
         print("reading from datapath", args.data_path)
-        root = os.path.join(args.data_path, 'train' if is_train else 'val')
+        if is_train:
+            root = os.path.join(args.data_path, 'train')
+        else:
+            # 对测试集, 使用 ILSVRC2012 路径如果 base path 包含 imagenet-1k/0-1-0
+            if 'imagenet-1k/0-1-0' in args.data_path:
+                # 构造 validation path
+                root = os.path.join(args.data_path, 'ILSVRC2012/val')
+            else:
+                root = os.path.join(args.data_path, 'val')
+                
+        print(f"Using data from: {root}")
+        if not os.path.exists(root):
+            raise FileNotFoundError(f"Data directory {root} not found")
+            
+        # Verify directory structure for validation set
+        if not is_train and not any(os.path.isdir(os.path.join(root, d)) for d in os.listdir(root)):
+            raise FileNotFoundError(f"Validation data in {root} is not organized by class folders")
+            
         dataset = datasets.ImageFolder(root, transform=transform)
         nb_classes = 1000
     elif args.data_set == "image_folder":
