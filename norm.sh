@@ -1,4 +1,4 @@
-torchrun --nnodes=8 --nproc_per_node=8 main.py \
+torchrun --nproc_per_node=8 main.py \
     --model vit_base_patch16_224 \
     --drop_path 0.1 \
     --batch_size 64 \
