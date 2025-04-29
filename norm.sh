@@ -1,4 +1,4 @@
-torchrun --nproc_per_node=8 main.py \
+torchrun --nnodes=8 --nproc_per_node=8 main.py \
     --model vit_base_patch16_224 \
     --drop_path 0.1 \
     --batch_size 64 \
@@ -8,4 +8,5 @@ torchrun --nproc_per_node=8 main.py \
     --model_ema_eval true \
     --data_path /lpai/dataset/imagenet-1k/0-1-0 \
     --output_dir /lpai/output/models/pre \
-    --log_dir /lpai/output/models/pre 
+    --log_dir /lpai/output/models/pre \
+    --dynamic_tanh false
